@@ -58,5 +58,19 @@
     "Do you have a valid passport?": "Do you have a valid passport?",
     "Have you ever flown on an airplane?": "Have you ever flown on an airplane?",
     "Do you use 5G internet?": "Do you use 5G internet?",
-    "Do you subscribe to a paid streaming service (Netflix, etc.)?": "Do you subscribe to a paid streaming service (Netflix, etc.)?"
+    "Do you subscribe to a paid streaming service (Netflix, etc.)?": "Do you subscribe to a paid streaming service (Netflix, etc.)?",
+    "Tell us about yourself": "Tell us about yourself",
+    "For more accurate comparison": "For more accurate comparison",
+    "Age Group": "Age Group",
+    "Gender": "Gender",
+    "10s": "10s",
+    "20s": "20s",
+    "30s": "30s",
+    "40s": "40s",
+    "50s+": "50s+",
+    "Male": "Male",
+    "Female": "Female",
+    "Other": "Other",
+    "Prefer not to say": "Prefer not to say",
+    "Continue": "Continue"
 }

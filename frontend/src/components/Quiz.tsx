@@ -1,19 +1,31 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { questions } from '../data/questions';
 import './Quiz.css';
 
 interface QuizProps {
-    onFinish: (answers: boolean[]) => void;
+    onFinish: (answers: boolean[], questionTimes: number[]) => void;
 }
 
 export const Quiz = ({ onFinish }: QuizProps) => {
     const { t } = useTranslation();
     const [index, setIndex] = useState(0);
     const [answers, setAnswers] = useState<boolean[]>([]);
+    const [questionTimes, setQuestionTimes] = useState<number[]>([]);
+    const questionStartTime = useRef<number>(Date.now());
+
+    // Reset timer when question changes
+    useEffect(() => {
+        questionStartTime.current = Date.now();
+    }, [index]);
 
     const handleAnswer = (answer: boolean) => {
+        // Calculate time spent on this question
+        const timeSpent = Date.now() - questionStartTime.current;
+        const newTimes = [...questionTimes, timeSpent];
+        setQuestionTimes(newTimes);
+
         // Add answer to local state
         const newAnswers = [...answers, answer];
         setAnswers(newAnswers);
@@ -24,7 +36,7 @@ export const Quiz = ({ onFinish }: QuizProps) => {
                 setIndex(index + 1);
             }, 200); // Small delay for visual feedback
         } else {
-            onFinish(newAnswers);
+            onFinish(newAnswers, newTimes);
         }
     };
 

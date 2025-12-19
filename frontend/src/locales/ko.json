@@ -58,5 +58,19 @@
     "Do you have a valid passport?": "유효한 여권을 가지고 있습니까?",
     "Have you ever flown on an airplane?": "비행기를 타본 적이 있습니까?",
     "Do you use 5G internet?": "5G 인터넷을 사용합니까?",
-    "Do you subscribe to a paid streaming service (Netflix, etc.)?": "유료 스트리밍 서비스(넷플릭스 등)를 구독하고 있습니까?"
+    "Do you subscribe to a paid streaming service (Netflix, etc.)?": "유료 스트리밍 서비스(넷플릭스 등)를 구독하고 있습니까?",
+    "Tell us about yourself": "간단한 정보를 알려주세요",
+    "For more accurate comparison": "더 정확한 비교를 위해",
+    "Age Group": "연령대",
+    "Gender": "성별",
+    "10s": "10대",
+    "20s": "20대",
+    "30s": "30대",
+    "40s": "40대",
+    "50s+": "50대 이상",
+    "Male": "남성",
+    "Female": "여성",
+    "Other": "기타",
+    "Prefer not to say": "응답하지 않음",
+    "Continue": "계속하기"
 }
