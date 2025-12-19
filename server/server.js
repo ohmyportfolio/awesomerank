@@ -39,6 +39,11 @@ db.exec(`
     question_times TEXT,
     total_quiz_time INTEGER,
 
+    -- Score results
+    score REAL,
+    tier TEXT,
+    yes_count INTEGER,
+
     -- Session info
     session_duration INTEGER,
     selected_language TEXT,
@@ -76,6 +81,7 @@ const insertStmt = db.prepare(`
     timestamp, country, city, timezone_from_ip,
     age_group, gender,
     answers, question_times, total_quiz_time,
+    score, tier, yes_count,
     session_duration, selected_language,
     browser_language, languages, timezone, device_type,
     screen_width, screen_height, viewport_width, viewport_height,
@@ -84,6 +90,7 @@ const insertStmt = db.prepare(`
   ) VALUES (
     ?, ?, ?, ?,
     ?, ?,
+    ?, ?, ?,
     ?, ?, ?,
     ?, ?,
     ?, ?, ?, ?,
@@ -138,6 +145,9 @@ app.post('/api/submit', async (req, res) => {
       JSON.stringify(body.answers || []),
       JSON.stringify(body.questionTimes || []),
       body.totalQuizTime || null,
+      body.score || null,
+      body.tier || null,
+      body.yesCount || null,
       body.sessionDuration || null,
       body.selectedLanguage || null,
       body.browserLanguage || null,

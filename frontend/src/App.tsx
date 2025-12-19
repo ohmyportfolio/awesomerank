@@ -8,6 +8,7 @@ import type { DemographicsData } from './components/Demographics';
 import { Quiz } from './components/Quiz';
 import { Result } from './components/Result';
 import { AnimatePresence } from 'framer-motion';
+import { calculateScore } from './utils/scoreCalculator';
 
 // Collect client-side data
 function getClientData() {
@@ -86,6 +87,9 @@ function App() {
     setQuestionTimes(times);
     setView('result');
 
+    // Calculate score
+    const scoreResult = calculateScore(finalAnswers);
+
     // Submit all collected data
     const sessionDuration = Date.now() - startTime;
     submitQuizData({
@@ -96,6 +100,11 @@ function App() {
       answers: finalAnswers,
       questionTimes: times,
       totalQuizTime: times.reduce((a, b) => a + b, 0),
+
+      // Score results
+      score: scoreResult.score,
+      tier: scoreResult.tier,
+      yesCount: scoreResult.yesCount,
 
       // Session info
       sessionDuration,

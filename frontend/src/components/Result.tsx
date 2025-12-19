@@ -151,9 +151,10 @@ export const Result = ({ answers, onRestart }: ResultProps) => {
         displayScore = "< 0.0001";
     }
 
-    // Calculate "1 in X people"
-    const oneInX = topShare > 0 ? Math.round(1 / topShare) : Number.POSITIVE_INFINITY;
-    const oneInXString = oneInX.toLocaleString();
+    // Calculate how many people share this level globally (out of 8 billion)
+    const WORLD_POPULATION = 8_000_000_000;
+    const peopleAtThisLevel = Math.round(WORLD_POPULATION * topShare);
+    const peopleString = peopleAtThisLevel.toLocaleString();
 
     // Determine Tier
     let tier = t("Global Citizen");
@@ -229,9 +230,8 @@ export const Result = ({ answers, onRestart }: ResultProps) => {
                     animate={{ opacity: 1 }}
                     transition={{ delay: 2.0 }}
                 >
-                    <p>{t('That means you are 1 in')}</p>
-                    <p style={{ fontSize: '1.5rem', fontWeight: 'bold', color: tierColor, margin: '0.5rem 0' }}>{oneInXString}</p>
-                    <p>{t('people.')}</p>
+                    <p style={{ fontSize: '1.5rem', fontWeight: 'bold', color: tierColor, margin: '0.5rem 0' }}>{peopleString}</p>
+                    <p>{t('people')}</p>
                 </motion.div>
             </div>
 
