@@ -4,42 +4,11 @@ import './AppSelector.css';
 
 interface AppInfo {
     id: string;
-    titleKey: string;
-    descriptionKey: string;
+    title: string;
+    description: string;
     icon: string;
     available: boolean;
 }
-
-const apps: AppInfo[] = [
-    {
-        id: 'world-rank',
-        titleKey: 'World Rank',
-        descriptionKey: 'app_world_rank_desc',
-        icon: '🌍',
-        available: true,
-    },
-    {
-        id: 'coming-soon-1',
-        titleKey: 'Coming Soon',
-        descriptionKey: 'app_coming_soon_desc',
-        icon: '🔮',
-        available: false,
-    },
-    {
-        id: 'coming-soon-2',
-        titleKey: 'Coming Soon',
-        descriptionKey: 'app_coming_soon_desc',
-        icon: '✨',
-        available: false,
-    },
-    {
-        id: 'coming-soon-3',
-        titleKey: 'Coming Soon',
-        descriptionKey: 'app_coming_soon_desc',
-        icon: '🎯',
-        available: false,
-    },
-];
 
 interface AppSelectorProps {
     onSelectApp: (appId: string) => void;
@@ -47,6 +16,44 @@ interface AppSelectorProps {
 
 export const AppSelector = ({ onSelectApp }: AppSelectorProps) => {
     const { t } = useTranslation();
+
+    const apps: AppInfo[] = [
+        {
+            id: 'world-rank',
+            title: t('World Rank'),
+            description: t('app_world_rank_desc'),
+            icon: '🌍',
+            available: true,
+        },
+        {
+            id: 'income-rank',
+            title: t('Income Rank'),
+            description: t('See your income rank worldwide'),
+            icon: '🧾',
+            available: true,
+        },
+        {
+            id: 'coming-soon-1',
+            title: t('Coming Soon'),
+            description: t('app_coming_soon_desc'),
+            icon: '🔮',
+            available: false,
+        },
+        {
+            id: 'coming-soon-2',
+            title: t('Coming Soon'),
+            description: t('app_coming_soon_desc'),
+            icon: '✨',
+            available: false,
+        },
+        {
+            id: 'coming-soon-3',
+            title: t('Coming Soon'),
+            description: t('app_coming_soon_desc'),
+            icon: '🎯',
+            available: false,
+        },
+    ];
 
     const handleAppClick = (app: AppInfo) => {
         if (app.available) {
@@ -91,8 +98,8 @@ export const AppSelector = ({ onSelectApp }: AppSelectorProps) => {
                         disabled={!app.available}
                     >
                         <span className="app-card-icon">{app.icon}</span>
-                        <span className="app-card-title">{t(app.titleKey)}</span>
-                        <span className="app-card-description">{t(app.descriptionKey)}</span>
+                        <span className="app-card-title">{app.title}</span>
+                        <span className="app-card-description">{app.description}</span>
                         {!app.available && (
                             <span className="app-card-badge">{t('Coming Soon')}</span>
                         )}

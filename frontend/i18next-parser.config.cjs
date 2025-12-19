@@ -1,5 +1,7 @@
 module.exports = {
     defaultNamespace: 'translation',
+    keySeparator: false,
+    namespaceSeparator: false,
     lexers: {
         ts: ['JavascriptLexer'],
         tsx: ['JsxLexer'],

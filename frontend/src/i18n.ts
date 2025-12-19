@@ -78,6 +78,10 @@ i18n
             he: { translation: he },
         },
         fallbackLng: 'en',
+        keySeparator: false,
+        nsSeparator: false,
+        returnEmptyString: false,
+        returnNull: false,
         interpolation: {
             escapeValue: false,
         },

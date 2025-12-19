@@ -7,6 +7,7 @@ import { Demographics } from './components/Demographics';
 import type { DemographicsData } from './components/Demographics';
 import { Quiz } from './components/Quiz';
 import { Result } from './components/Result';
+import { IncomeRank } from './components/IncomeRank';
 import { ConsentBanner } from './components/ConsentBanner';
 import { ConsentProvider, useConsent } from './contexts/ConsentContext';
 import { AnimatePresence } from 'framer-motion';
@@ -91,27 +92,29 @@ async function submitQuizData(data: Record<string, unknown>) {
 function AppContent() {
   const { i18n } = useTranslation();
   const { canCollectData } = useConsent();
-  const [view, setView] = useState<'home' | 'landing' | 'demographics' | 'quiz' | 'result'>('home');
+  const [view, setView] = useState<'home' | 'landing' | 'demographics' | 'quiz' | 'result' | 'income'>('home');
   const [answers, setAnswers] = useState<boolean[]>([]);
   const [demographics, setDemographics] = useState<DemographicsData | null>(null);
-  const [startTime, setStartTime] = useState<number>(0);
-  const [_questionTimes, setQuestionTimes] = useState<number[]>([]);
+  const startTimeRef = useRef<number>(0);
   const attributionRef = useRef(getAttributionData());
 
   // Track session start
   useEffect(() => {
-    setStartTime(Date.now());
+    startTimeRef.current = Date.now();
   }, []);
 
   const handleSelectApp = (appId: string) => {
     if (appId === 'world-rank') {
       setView('landing');
+    } else if (appId === 'income-rank') {
+      setView('income');
     }
   };
 
   const goHome = () => setView('home');
   const goBack = () => {
     if (view === 'landing') setView('home');
+    else if (view === 'income') setView('home');
     else if (view === 'demographics') setView('landing');
     else if (view === 'quiz') setView('demographics');
     else if (view === 'result') setView('home');
@@ -126,14 +129,13 @@ function AppContent() {
 
   const finishQuiz = (finalAnswers: boolean[], times: number[]) => {
     setAnswers(finalAnswers);
-    setQuestionTimes(times);
     setView('result');
 
     // Calculate score
     const scoreResult = calculateScore(finalAnswers);
 
     // Submit all collected data
-    const sessionDuration = Date.now() - startTime;
+    const sessionDuration = Date.now() - startTimeRef.current;
     const questionIds = QUESTION_IDS;
     const answersByQuestionId = Object.fromEntries(
       questionIds.map((questionId, idx) => [questionId, finalAnswers[idx]])
@@ -172,7 +174,7 @@ function AppContent() {
         selectedLanguage: i18n.language,
         clientId: getOrCreateClientId(),
         sessionId: randomId(),
-        sessionStartedAt: startTime ? new Date(startTime).toISOString() : null,
+        sessionStartedAt: startTimeRef.current ? new Date(startTimeRef.current).toISOString() : null,
         sessionFinishedAt: new Date().toISOString(),
         completed: true,
 
@@ -187,14 +189,13 @@ function AppContent() {
 
   const restart = () => {
     setAnswers([]);
-    setQuestionTimes([]);
     setDemographics(null);
-    setStartTime(Date.now());
+    startTimeRef.current = Date.now();
     setView('home');
   };
 
   const showBack = view !== 'home';
-  const showHome = view !== 'home' && view !== 'landing';
+  const showHome = view !== 'home' && view !== 'landing' && view !== 'income';
 
   return (
     <Layout
@@ -206,6 +207,7 @@ function AppContent() {
       <AnimatePresence mode="wait">
         {view === 'home' && <AppSelector onSelectApp={handleSelectApp} key="home" />}
         {view === 'landing' && <Landing onStart={startQuiz} key="landing" />}
+        {view === 'income' && <IncomeRank key="income" />}
         {view === 'demographics' && <Demographics onComplete={handleDemographics} key="demographics" />}
         {view === 'quiz' && <Quiz onFinish={finishQuiz} key="quiz" />}
         {view === 'result' && <Result answers={answers} onRestart={restart} key="result" />}

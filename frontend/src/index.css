@@ -14,6 +14,11 @@
   --secondary-color: #7000ff;
   /* Deep Violet */
 
+  /* Aliases used by some components */
+  --primary: var(--primary-color);
+  --accent: var(--secondary-color);
+  --surface: var(--surface-color);
+
   --glass-bg: rgba(255, 255, 255, 0.03);
   --glass-border: rgba(255, 255, 255, 0.08);
 
