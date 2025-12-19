@@ -1,5 +1,7 @@
 import { questions } from '../data/questions';
 
+export const SCORE_ALGO_VERSION = 'v1-jeffreys-0.5-0.5-level-log';
+
 const getLevelNumber = (category: string) => {
     const match = category.match(/Level\s*(\d+)/i);
     return match ? Number.parseInt(match[1], 10) : 1;

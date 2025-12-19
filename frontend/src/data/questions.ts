@@ -131,3 +131,18 @@ export const questions: Question[] = [
     category: "Level 5: Mobility (Elite)",
   },
 ];
+
+function fnv1a32(value: string) {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+export const QUESTION_IDS = questions.map((question) => question.id);
+
+export const QUESTION_SET_ID = `qs_${fnv1a32(
+  JSON.stringify(questions.map((q) => ({ id: q.id, p: q.probability, c: q.category })))
+)}`;

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Layout } from './components/Layout';
 import { AppSelector } from './components/AppSelector';
@@ -7,8 +7,48 @@ import { Demographics } from './components/Demographics';
 import type { DemographicsData } from './components/Demographics';
 import { Quiz } from './components/Quiz';
 import { Result } from './components/Result';
+import { ConsentBanner } from './components/ConsentBanner';
+import { ConsentProvider, useConsent } from './contexts/ConsentContext';
 import { AnimatePresence } from 'framer-motion';
-import { calculateScore } from './utils/scoreCalculator';
+import { calculateScore, SCORE_ALGO_VERSION } from './utils/scoreCalculator';
+import { QUESTION_IDS, QUESTION_SET_ID } from './data/questions';
+
+const APP_ID = 'world-rank';
+const QUIZ_VERSION = 'v1';
+
+function randomId() {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getOrCreateClientId() {
+  const key = 'world_rank_client_id';
+  try {
+    const existing = localStorage.getItem(key);
+    if (existing) return existing;
+    const created = randomId();
+    localStorage.setItem(key, created);
+    return created;
+  } catch {
+    return null;
+  }
+}
+
+function getAttributionData() {
+  const url = new URL(window.location.href);
+  const paramOrNull = (key: string) => url.searchParams.get(key) || null;
+
+  return {
+    landingUrl: url.toString(),
+    landingPath: `${url.pathname}${url.search}`,
+    documentReferrer: document.referrer || null,
+    utmSource: paramOrNull('utm_source'),
+    utmMedium: paramOrNull('utm_medium'),
+    utmCampaign: paramOrNull('utm_campaign'),
+    utmContent: paramOrNull('utm_content'),
+    utmTerm: paramOrNull('utm_term'),
+  };
+}
 
 // Collect client-side data
 function getClientData() {
@@ -48,13 +88,15 @@ async function submitQuizData(data: Record<string, unknown>) {
   }
 }
 
-function App() {
+function AppContent() {
   const { i18n } = useTranslation();
+  const { canCollectData } = useConsent();
   const [view, setView] = useState<'home' | 'landing' | 'demographics' | 'quiz' | 'result'>('home');
   const [answers, setAnswers] = useState<boolean[]>([]);
   const [demographics, setDemographics] = useState<DemographicsData | null>(null);
   const [startTime, setStartTime] = useState<number>(0);
   const [_questionTimes, setQuestionTimes] = useState<number[]>([]);
+  const attributionRef = useRef(getAttributionData());
 
   // Track session start
   useEffect(() => {
@@ -92,27 +134,55 @@ function App() {
 
     // Submit all collected data
     const sessionDuration = Date.now() - startTime;
-    submitQuizData({
-      // Demographics
-      ...demographics,
+    const questionIds = QUESTION_IDS;
+    const answersByQuestionId = Object.fromEntries(
+      questionIds.map((questionId, idx) => [questionId, finalAnswers[idx]])
+    );
+    const timesByQuestionId = Object.fromEntries(
+      questionIds.map((questionId, idx) => [questionId, times[idx]])
+    );
 
-      // Quiz results
-      answers: finalAnswers,
-      questionTimes: times,
-      totalQuizTime: times.reduce((a, b) => a + b, 0),
+    // Only submit data if user has consented
+    if (canCollectData()) {
+      submitQuizData({
+        // App/metadata
+        appId: APP_ID,
+        quizVersion: QUIZ_VERSION,
+        questionSetId: QUESTION_SET_ID,
+        scoreAlgoVersion: SCORE_ALGO_VERSION,
 
-      // Score results
-      score: scoreResult.score,
-      tier: scoreResult.tier,
-      yesCount: scoreResult.yesCount,
+        // Demographics
+        ...demographics,
 
-      // Session info
-      sessionDuration,
-      selectedLanguage: i18n.language,
+        // Quiz results
+        questionIds,
+        answers: finalAnswers,
+        questionTimes: times,
+        answersByQuestionId,
+        timesByQuestionId,
+        totalQuizTime: times.reduce((a, b) => a + b, 0),
 
-      // Client data
-      ...getClientData(),
-    });
+        // Score results
+        score: scoreResult.score,
+        tier: scoreResult.tier,
+        yesCount: scoreResult.yesCount,
+
+        // Session info
+        sessionDuration,
+        selectedLanguage: i18n.language,
+        clientId: getOrCreateClientId(),
+        sessionId: randomId(),
+        sessionStartedAt: startTime ? new Date(startTime).toISOString() : null,
+        sessionFinishedAt: new Date().toISOString(),
+        completed: true,
+
+        // Attribution
+        ...attributionRef.current,
+
+        // Client data
+        ...getClientData(),
+      });
+    }
   };
 
   const restart = () => {
@@ -140,7 +210,16 @@ function App() {
         {view === 'quiz' && <Quiz onFinish={finishQuiz} key="quiz" />}
         {view === 'result' && <Result answers={answers} onRestart={restart} key="result" />}
       </AnimatePresence>
+      <ConsentBanner />
     </Layout>
+  );
+}
+
+function App() {
+  return (
+    <ConsentProvider>
+      <AppContent />
+    </ConsentProvider>
   );
 }
 

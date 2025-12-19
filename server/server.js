@@ -27,16 +27,26 @@ db.exec(`
 
     -- Geo data (from IP)
     country TEXT,
+    country_code TEXT,
     city TEXT,
     timezone_from_ip TEXT,
+
+    -- App / experiment metadata
+    app_id TEXT,
+    quiz_version TEXT,
+    question_set_id TEXT,
+    score_algo_version TEXT,
 
     -- Demographics
     age_group TEXT,
     gender TEXT,
 
     -- Quiz results
+    question_ids TEXT,
     answers TEXT,
     question_times TEXT,
+    answers_by_question_id TEXT,
+    times_by_question_id TEXT,
     total_quiz_time INTEGER,
 
     -- Score results
@@ -47,6 +57,21 @@ db.exec(`
     -- Session info
     session_duration INTEGER,
     selected_language TEXT,
+    client_id TEXT,
+    session_id TEXT,
+    session_started_at TEXT,
+    session_finished_at TEXT,
+    completed INTEGER,
+
+    -- Attribution
+    landing_url TEXT,
+    landing_path TEXT,
+    document_referrer TEXT,
+    utm_source TEXT,
+    utm_medium TEXT,
+    utm_campaign TEXT,
+    utm_content TEXT,
+    utm_term TEXT,
 
     -- Client data
     browser_language TEXT,
@@ -67,32 +92,82 @@ db.exec(`
   )
 `);
 
+function ensureColumns({ table, columns }) {
+  const existing = db.prepare(`PRAGMA table_info(${table})`).all();
+  const existingNames = new Set(existing.map((col) => col.name));
+  for (const [name, type] of Object.entries(columns)) {
+    if (existingNames.has(name)) continue;
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+  }
+}
+
+// Lightweight, additive migrations for existing DBs
+ensureColumns({
+  table: 'responses',
+  columns: {
+    country_code: 'TEXT',
+    app_id: 'TEXT',
+    quiz_version: 'TEXT',
+    question_set_id: 'TEXT',
+    score_algo_version: 'TEXT',
+    question_ids: 'TEXT',
+    answers_by_question_id: 'TEXT',
+    times_by_question_id: 'TEXT',
+    client_id: 'TEXT',
+    session_id: 'TEXT',
+    session_started_at: 'TEXT',
+    session_finished_at: 'TEXT',
+    completed: 'INTEGER',
+    landing_url: 'TEXT',
+    landing_path: 'TEXT',
+    document_referrer: 'TEXT',
+    utm_source: 'TEXT',
+    utm_medium: 'TEXT',
+    utm_campaign: 'TEXT',
+    utm_content: 'TEXT',
+    utm_term: 'TEXT'
+  }
+});
+
 // Create indexes for common queries
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_timestamp ON responses(timestamp);
   CREATE INDEX IF NOT EXISTS idx_country ON responses(country);
+  CREATE INDEX IF NOT EXISTS idx_country_code ON responses(country_code);
   CREATE INDEX IF NOT EXISTS idx_age_group ON responses(age_group);
   CREATE INDEX IF NOT EXISTS idx_gender ON responses(gender);
+  CREATE INDEX IF NOT EXISTS idx_app_id ON responses(app_id);
+  CREATE INDEX IF NOT EXISTS idx_question_set_id ON responses(question_set_id);
+  CREATE INDEX IF NOT EXISTS idx_client_id ON responses(client_id);
+  CREATE INDEX IF NOT EXISTS idx_session_id ON responses(session_id);
 `);
 
 // Prepared statement for insert
 const insertStmt = db.prepare(`
   INSERT INTO responses (
-    timestamp, country, city, timezone_from_ip,
+    timestamp, country, country_code, city, timezone_from_ip,
+    app_id, quiz_version, question_set_id, score_algo_version,
     age_group, gender,
-    answers, question_times, total_quiz_time,
+    question_ids, answers, question_times, answers_by_question_id, times_by_question_id, total_quiz_time,
     score, tier, yes_count,
-    session_duration, selected_language,
+    session_duration, selected_language, client_id, session_id,
+    session_started_at, session_finished_at, completed,
+    landing_url, landing_path, document_referrer,
+    utm_source, utm_medium, utm_campaign, utm_content, utm_term,
     browser_language, languages, timezone, device_type,
     screen_width, screen_height, viewport_width, viewport_height,
     pixel_ratio, platform, connection_type,
     user_agent, referer
   ) VALUES (
+    ?, ?, ?, ?, ?,
     ?, ?, ?, ?,
     ?, ?,
+    ?, ?, ?, ?, ?, ?,
+    ?, ?, ?,
+    ?, ?, ?, ?,
     ?, ?, ?,
     ?, ?, ?,
-    ?, ?,
+    ?, ?, ?, ?, ?,
     ?, ?, ?, ?,
     ?, ?, ?, ?,
     ?, ?, ?,
@@ -105,18 +180,24 @@ async function getGeoFromIP(ip) {
   try {
     // Skip for localhost
     if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') {
-      return { country: 'Local', city: 'Localhost', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone };
+      return {
+        country: 'Local',
+        countryCode: 'Local',
+        city: 'Localhost',
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+      };
     }
 
-    const response = await fetch(`http://ip-api.com/json/${ip}?fields=country,city,timezone`);
+    const response = await fetch(`http://ip-api.com/json/${ip}?fields=country,countryCode,city,timezone`);
     const data = await response.json();
     return {
       country: data.country || 'Unknown',
+      countryCode: data.countryCode || 'Unknown',
       city: data.city || 'Unknown',
       timezone: data.timezone || 'Unknown'
     };
   } catch {
-    return { country: 'Unknown', city: 'Unknown', timezone: 'Unknown' };
+    return { country: 'Unknown', countryCode: 'Unknown', city: 'Unknown', timezone: 'Unknown' };
   }
 }
 
@@ -138,18 +219,39 @@ app.post('/api/submit', async (req, res) => {
     insertStmt.run(
       new Date().toISOString(),
       geo.country,
+      geo.countryCode,
       geo.city,
       geo.timezone,
+      body.appId || null,
+      body.quizVersion || null,
+      body.questionSetId || null,
+      body.scoreAlgoVersion || null,
       body.ageGroup || null,
       body.gender || null,
+      JSON.stringify(body.questionIds || []),
       JSON.stringify(body.answers || []),
       JSON.stringify(body.questionTimes || []),
+      JSON.stringify(body.answersByQuestionId || {}),
+      JSON.stringify(body.timesByQuestionId || {}),
       body.totalQuizTime || null,
       body.score || null,
       body.tier || null,
       body.yesCount || null,
       body.sessionDuration || null,
       body.selectedLanguage || null,
+      body.clientId || null,
+      body.sessionId || null,
+      body.sessionStartedAt || null,
+      body.sessionFinishedAt || null,
+      typeof body.completed === 'boolean' ? (body.completed ? 1 : 0) : null,
+      body.landingUrl || null,
+      body.landingPath || null,
+      body.documentReferrer || null,
+      body.utmSource || null,
+      body.utmMedium || null,
+      body.utmCampaign || null,
+      body.utmContent || null,
+      body.utmTerm || null,
       body.browserLanguage || null,
       body.languages || null,
       body.timezone || null,
