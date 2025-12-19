@@ -2,7 +2,7 @@
 
 set -e
 
-echo "=== World Rank 업데이트 스크립트 ==="
+echo "=== Awesome Rank 업데이트 스크립트 ==="
 echo ""
 
 cd /projects/worldrank

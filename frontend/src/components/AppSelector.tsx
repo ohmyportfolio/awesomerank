@@ -20,7 +20,7 @@ export const AppSelector = ({ onSelectApp }: AppSelectorProps) => {
     const apps: AppInfo[] = [
         {
             id: 'world-rank',
-            title: t('World Rank'),
+            title: t('Awesome Rank'),
             description: t('app_world_rank_desc'),
             icon: '🌍',
             available: true,

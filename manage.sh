@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# World Rank 관리 스크립트
+# Awesome Rank 관리 스크립트
 # Usage: ./manage.sh [command]
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -150,7 +150,7 @@ cmd_logf() {
 cmd_status() {
     echo ""
     echo "========================================"
-    echo "       World Rank 서버 상태"
+    echo "       Awesome Rank 서버 상태"
     echo "========================================"
 
     if is_running; then
@@ -260,7 +260,7 @@ cmd_clean() {
 # 도움말
 cmd_help() {
     echo ""
-    echo "World Rank 관리 스크립트"
+    echo "Awesome Rank 관리 스크립트"
     echo ""
     echo "사용법: ./manage.sh [명령어]"
     echo ""

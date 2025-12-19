@@ -1,4 +1,4 @@
-# World Rank Project Guide
+# Awesome Rank Project Guide
 
 ## Project Structure
 

@@ -1,4 +1,4 @@
-# robots.txt for World Rank
+# robots.txt for Awesome Rank
 # https://awesomerank.com
 
 User-agent: *

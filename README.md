@@ -1,10 +1,10 @@
-# World Rank
+# Awesome Rank
 
 Discover where you stand among 8 billion people. Take our lifestyle quiz or calculate your global income ranking.
 
 ## Features
 
-### World Rank (Lifestyle Quiz)
+### Awesome Rank (Lifestyle Quiz)
 - 20+ questions to measure your global lifestyle ranking
 - Categories: Infrastructure, Connectivity, Assets, Living Standards
 - Sophisticated Bayesian scoring algorithm
