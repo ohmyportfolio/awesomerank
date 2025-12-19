@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import { questions } from '../data/questions';
 import './Quiz.css';
 
@@ -8,6 +9,7 @@ interface QuizProps {
 }
 
 export const Quiz = ({ onFinish }: QuizProps) => {
+    const { t } = useTranslation();
     const [index, setIndex] = useState(0);
     const [answers, setAnswers] = useState<boolean[]>([]);
 
@@ -56,7 +58,7 @@ export const Quiz = ({ onFinish }: QuizProps) => {
                         className="question-card glass-panel"
                     >
                         <div className="category-badge">{question.category.split('(')[0]}</div>
-                        <h2 className="question-text">{question.text}</h2>
+                        <h2 className="question-text">{t(question.id)}</h2>
 
                         <div className="options-grid">
                             <motion.button
@@ -65,8 +67,8 @@ export const Quiz = ({ onFinish }: QuizProps) => {
                                 whileHover={{ scale: 1.02, backgroundColor: "rgba(0, 240, 255, 0.2)" }}
                                 whileTap={{ scale: 0.98 }}
                             >
-                                YES
-                                <span className="key-hint">예</span>
+                                {t('YES')}
+                                <span className="key-hint">{t('Yes_Hint')}</span>
                             </motion.button>
 
                             <motion.button
@@ -75,8 +77,8 @@ export const Quiz = ({ onFinish }: QuizProps) => {
                                 whileHover={{ scale: 1.02, backgroundColor: "rgba(255, 50, 50, 0.2)" }}
                                 whileTap={{ scale: 0.98 }}
                             >
-                                NO
-                                <span className="key-hint">아니오</span>
+                                {t('NO')}
+                                <span className="key-hint">{t('No_Hint')}</span>
                             </motion.button>
                         </div>
                     </motion.div>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Landing } from './components/Landing';
 import { Quiz } from './components/Quiz';
 import { Result } from './components/Result';
+import { LanguageSwitcher } from './components/LanguageSwitcher';
 import { AnimatePresence } from 'framer-motion';
 
 function App() {
@@ -19,11 +20,14 @@ function App() {
   };
 
   return (
-    <AnimatePresence mode="wait">
-      {view === 'landing' && <Landing onStart={startQuiz} key="landing" />}
-      {view === 'quiz' && <Quiz onFinish={finishQuiz} key="quiz" />}
-      {view === 'result' && <Result answers={answers} onRestart={restart} key="result" />}
-    </AnimatePresence>
+    <>
+      <LanguageSwitcher />
+      <AnimatePresence mode="wait">
+        {view === 'landing' && <Landing onStart={startQuiz} key="landing" />}
+        {view === 'quiz' && <Quiz onFinish={finishQuiz} key="quiz" />}
+        {view === 'result' && <Result answers={answers} onRestart={restart} key="result" />}
+      </AnimatePresence>
+    </>
   );
 }
 

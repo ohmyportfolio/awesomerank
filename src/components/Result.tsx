@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import { questions } from '../data/questions';
 import './Result.css';
 
@@ -8,6 +9,7 @@ interface ResultProps {
 }
 
 export const Result = ({ answers, onRestart }: ResultProps) => {
+    const { t } = useTranslation();
     // Calculate score: Product of probabilities of YES answers * 100
     const probability = answers.reduce((acc, ans, idx) => {
         if (ans) {
@@ -33,16 +35,16 @@ export const Result = ({ answers, onRestart }: ResultProps) => {
     const oneInXString = oneInX.toLocaleString();
 
     // Determine Tier
-    let tier = "Global Citizen";
+    let tier = t("Global Citizen");
     let tierColor = "#a0a0a0"; // Gray
 
-    if (score < 0.000001) { tier = "Singularity Class"; tierColor = "#ff00ff"; } // Magenta
-    else if (score < 0.0001) { tier = "Visionary Elite"; tierColor = "#ff0055"; } // Red/Pink
-    else if (score < 0.01) { tier = "World Class"; tierColor = "#ffd700"; } // Gold
-    else if (score < 1) { tier = "Top 1% Elite"; tierColor = "#00f3ff"; } // Cyan
-    else if (score < 10) { tier = "High Achiever"; tierColor = "#00f3ff"; } // Cyan
-    else if (score < 30) { tier = "Global Middle Class"; tierColor = "#4cd137"; } // Green
-    else if (score < 60) { tier = "Aspiring Global"; tierColor = "#fbc531"; } // Yellow
+    if (score < 0.000001) { tier = t("Singularity Class"); tierColor = "#ff00ff"; } // Magenta
+    else if (score < 0.0001) { tier = t("Visionary Elite"); tierColor = "#ff0055"; } // Red/Pink
+    else if (score < 0.01) { tier = t("World Class"); tierColor = "#ffd700"; } // Gold
+    else if (score < 1) { tier = t("Top 1% Elite"); tierColor = "#00f3ff"; } // Cyan
+    else if (score < 10) { tier = t("High Achiever"); tierColor = "#00f3ff"; } // Cyan
+    else if (score < 30) { tier = t("Global Middle Class"); tierColor = "#4cd137"; } // Green
+    else if (score < 60) { tier = t("Aspiring Global"); tierColor = "#fbc531"; } // Yellow
 
     return (
         <motion.div
@@ -72,7 +74,7 @@ export const Result = ({ answers, onRestart }: ResultProps) => {
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 0.8 }}
                 >
-                    <h2>You are in the top</h2>
+                    <h2>{t('You are in the top')}</h2>
                 </motion.div>
 
                 <motion.div
@@ -90,7 +92,7 @@ export const Result = ({ answers, onRestart }: ResultProps) => {
                     animate={{ opacity: 1 }}
                     transition={{ delay: 1.5 }}
                 >
-                    of the global population.
+                    {t('of the global population.')}
                 </motion.p>
 
                 <motion.div
@@ -106,9 +108,9 @@ export const Result = ({ answers, onRestart }: ResultProps) => {
                     animate={{ opacity: 1 }}
                     transition={{ delay: 2.0 }}
                 >
-                    <p>That means you are 1 in</p>
+                    <p>{t('That means you are 1 in')}</p>
                     <p style={{ fontSize: '1.5rem', fontWeight: 'bold', color: tierColor, margin: '0.5rem 0' }}>{oneInXString}</p>
-                    <p>people.</p>
+                    <p>{t('people.')}</p>
                 </motion.div>
             </div>
 
@@ -121,7 +123,7 @@ export const Result = ({ answers, onRestart }: ResultProps) => {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
             >
-                Start Again
+                {t('Start Again')}
             </motion.button>
         </motion.div>
     );

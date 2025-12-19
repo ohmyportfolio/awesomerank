@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import './Landing.css';
 
 interface LandingProps {
@@ -6,6 +7,7 @@ interface LandingProps {
 }
 
 export const Landing = ({ onStart }: LandingProps) => {
+    const { t } = useTranslation();
     return (
         <motion.div
             className="landing-container"
@@ -20,7 +22,7 @@ export const Landing = ({ onStart }: LandingProps) => {
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ delay: 0.2, duration: 0.8, type: "spring" }}
             >
-                <h1 className="main-title">WORLD<br />RANK</h1>
+                <h1 className="main-title">{t('WORLD\nRANK')}</h1>
                 <div className="year-badge">2025</div>
             </motion.div>
 
@@ -30,7 +32,7 @@ export const Landing = ({ onStart }: LandingProps) => {
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ delay: 0.5, duration: 0.6 }}
             >
-                Where do you stand among<br />8 billion people?
+                {t('Where do you stand among\n8 billion people?')}
             </motion.p>
 
             <motion.button
@@ -42,7 +44,7 @@ export const Landing = ({ onStart }: LandingProps) => {
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ delay: 0.8, type: "spring" }}
             >
-                Begin Analysis
+                {t('Begin Analysis')}
             </motion.button>
 
             <div className="decor-circle"></div>
