@@ -1,6 +1,5 @@
 import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
-import { trackEvent, GA_EVENTS } from '../utils/analytics';
 import './AppSelector.css';
 
 interface AppInfo {
@@ -37,7 +36,6 @@ export const AppSelector = ({ onSelectApp }: AppSelectorProps) => {
 
     const handleAppClick = (app: AppInfo) => {
         if (app.available) {
-            trackEvent(GA_EVENTS.APP_SELECT, { app_type: app.id });
             onSelectApp(app.id);
         }
     };

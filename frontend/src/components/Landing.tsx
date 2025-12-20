@@ -1,6 +1,5 @@
 import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
-import { trackEvent, GA_EVENTS } from '../utils/analytics';
 import './Landing.css';
 
 interface LandingProps {
@@ -9,12 +8,6 @@ interface LandingProps {
 
 export const Landing = ({ onStart }: LandingProps) => {
     const { t } = useTranslation();
-
-    const handleStart = () => {
-        trackEvent(GA_EVENTS.QUIZ_START);
-        onStart();
-    };
-
     return (
         <motion.div
             className="landing-container"
@@ -44,7 +37,7 @@ export const Landing = ({ onStart }: LandingProps) => {
 
             <motion.button
                 className="btn-primary"
-                onClick={handleStart}
+                onClick={onStart}
                 whileHover={{ scale: 1.05, boxShadow: "0 0 30px var(--primary-glow-strong)" }}
                 whileTap={{ scale: 0.95 }}
                 initial={{ scale: 0.8, opacity: 0 }}

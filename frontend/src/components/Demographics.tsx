@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
-import { trackEvent, GA_EVENTS } from '../utils/analytics';
 import './Demographics.css';
 
 export interface DemographicsData {
@@ -37,10 +36,6 @@ export const Demographics = ({ onComplete }: DemographicsProps) => {
 
     const handleSubmit = () => {
         if (canProceed) {
-            trackEvent(GA_EVENTS.DEMOGRAPHICS_COMPLETE, {
-                age_group: ageGroup,
-                gender: gender,
-            });
             onComplete({ ageGroup, gender });
         }
     };

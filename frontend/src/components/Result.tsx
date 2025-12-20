@@ -2,7 +2,6 @@ import { motion } from 'framer-motion';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { questions } from '../data/questions';
-import { trackEvent, GA_EVENTS } from '../utils/analytics';
 import './Result.css';
 
 interface ResultProps {
@@ -195,9 +194,6 @@ export const Result = ({ answers, sharedScore, onRestart }: ResultProps) => {
             text: t('I am in the Top {{score}}% of the global population! #AwesomeRank', { score: displayScore }),
             url: shareUrl,
         };
-
-        const shareMethod = typeof navigator.share === 'function' ? 'native' : 'clipboard';
-        trackEvent(GA_EVENTS.RESULT_SHARE, { share_method: shareMethod });
 
         if (navigator.share) {
             try {

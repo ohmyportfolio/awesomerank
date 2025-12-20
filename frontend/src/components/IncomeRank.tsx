@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import type { IncomeBasis } from '../data/worldIncomeThresholds';
 import { WORLD_INCOME_THRESHOLDS_USD, WORLD_INCOME_WID } from '../data/worldIncomeThresholds';
 import { formatTopPercent, percentileFromIncome, topPercentFromIncome } from '../utils/incomeRank';
-import { trackEvent, GA_EVENTS } from '../utils/analytics';
 import './IncomeRank.css';
 
 // Parse URL parameters for shared results
@@ -124,13 +123,6 @@ export function IncomeRank() {
     setTimeout(() => {
       setSubmittedIncome(val);
       setIsCalculating(false);
-
-      // Track income calculation
-      trackEvent(GA_EVENTS.INCOME_CALCULATE, {
-        income: val,
-        basis: basis,
-      });
-
       // Wait for re-render then scroll
       setTimeout(() => {
         resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -154,9 +146,6 @@ export function IncomeRank() {
       text: t('My income is in the Top {{score}} worldwide. Check yours:', { score: topLabel }),
       url: shareUrl,
     };
-
-    const shareMethod = typeof navigator.share === 'function' ? 'native' : 'clipboard';
-    trackEvent(GA_EVENTS.INCOME_SHARE, { share_method: shareMethod });
 
     if (navigator.share) {
       try {
