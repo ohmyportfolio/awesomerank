@@ -24,7 +24,7 @@ export function PrivacyPolicy({ onClose }: PrivacyPolicyProps) {
       >
         <div className="privacy-header">
           <h1>{t('Privacy Policy')}</h1>
-          <button className="privacy-close" onClick={onClose} aria-label="Close">
+          <button className="privacy-close" onClick={onClose} aria-label={t('Close')}>
             ✕
           </button>
         </div>

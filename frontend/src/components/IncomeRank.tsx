@@ -172,6 +172,43 @@ export function IncomeRank() {
     }
   }, [i18n.language]);
 
+  const usdDaily = useMemo(() => {
+    try {
+      return new Intl.NumberFormat(i18n.language, {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+    } catch {
+      return new Intl.NumberFormat(undefined, {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+    }
+  }, [i18n.language]);
+
+  const usdDailyDelta = useMemo(() => {
+    try {
+      return new Intl.NumberFormat(i18n.language, {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+        signDisplay: 'always',
+      });
+    } catch {
+      return new Intl.NumberFormat(undefined, {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+    }
+  }, [i18n.language]);
+
   const highlight = useMemo(() => {
     const find = (p: number) => thresholds.find((x) => x.p === p)?.income ?? null;
     return {
@@ -206,6 +243,17 @@ export function IncomeRank() {
     return submittedIncome / 365;
   }, [submittedIncome]);
 
+  const monthlyIncome = useMemo(() => {
+    if (submittedIncome === null) return null;
+    return submittedIncome / 12;
+  }, [submittedIncome]);
+
+  const oneInPeople = useMemo(() => {
+    if (topPercent === null) return null;
+    if (!Number.isFinite(topPercent) || topPercent <= 0) return null;
+    return Math.max(1, Math.round(100 / topPercent));
+  }, [topPercent]);
+
   const nextMilestone = useMemo(() => {
     if (submittedIncome === null) return null;
     const candidates: Array<{ label: string; threshold: number | null }> = [
@@ -219,6 +267,36 @@ export function IncomeRank() {
     const delta = Math.max(0, next.threshold - submittedIncome);
     return { label: next.label, threshold: next.threshold, delta, reached: delta <= 0 };
   }, [submittedIncome, highlight.top1, highlight.top01, highlight.top10, t]);
+
+  const povertyBenchmarks = useMemo(() => {
+    if (!dailyIncome || !povertyStatus) return null;
+    return [
+      {
+        id: 'extreme',
+        labelKey: 'Extreme poverty line',
+        dailyUsd: POVERTY_LINES.extreme.dailyUsd,
+        isAbove: povertyStatus.aboveExtremePoverty,
+        highlight: false,
+      },
+      {
+        id: 'upper',
+        labelKey: 'Upper-middle poverty line',
+        dailyUsd: POVERTY_LINES.upper.dailyUsd,
+        isAbove: povertyStatus.aboveUpperPoverty,
+        highlight: false,
+      },
+      {
+        id: 'consumer',
+        labelKey: 'Global consumer class',
+        dailyUsd: CONSUMER_CLASS.dailyUsd,
+        isAbove: povertyStatus.isConsumerClass,
+        highlight: true,
+      },
+    ].map((b) => ({
+      ...b,
+      gapDailyUsd: dailyIncome - b.dailyUsd,
+    }));
+  }, [dailyIncome, povertyStatus]);
 
   const handleCheck = () => {
     const val = parseIncomeInput(incomeText);
@@ -299,7 +377,7 @@ export function IncomeRank() {
     const shareUrl = `${baseUrl}?${params.toString()}`;
 
     const shareData = {
-      title: 'Awesome Rank',
+      title: t('Awesome Rank'),
       text: t('My income is in the Top {{score}} worldwide. Check yours:', { score: topLabel }),
       url: shareUrl,
     };
@@ -440,17 +518,24 @@ export function IncomeRank() {
                 {/* Income Class Badge */}
                 {incomeClass && (
                   <motion.div
-                    className="income-class-badge"
+                    className="income-class"
                     initial={{ scale: 0.8, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     transition={{ delay: 0.1, type: 'spring' }}
-                    style={{
-                      borderColor: incomeClass.color,
-                      color: incomeClass.color,
-                      boxShadow: `0 0 20px ${incomeClass.color}30`
-                    }}
                   >
-                    {t(incomeClass.labelKey)}
+                    <div
+                      className="income-class-badge"
+                      style={{
+                        borderColor: incomeClass.color,
+                        color: incomeClass.color,
+                        boxShadow: `0 0 20px ${incomeClass.color}30`,
+                      }}
+                    >
+                      {t(incomeClass.labelKey)}
+                    </div>
+                    <div className="income-class-sub">
+                      {t('Richer than')} {incomeClass.minPercentile}–{incomeClass.maxPercentile}%
+                    </div>
                   </motion.div>
                 )}
 
@@ -475,6 +560,13 @@ export function IncomeRank() {
                         </>
                       )}
                     </p>
+                    {oneInPeople !== null && (
+                      <p className="result-meaning">
+                        {t('That means you are 1 in')}{' '}
+                        <span className="mono">{oneInPeople.toLocaleString(i18n.language)}</span>{' '}
+                        {t('people.')}
+                      </p>
+                    )}
                   </div>
                   <div className="result-stamp" aria-label={t('Income rank result')}>
                     <div className="stamp-inner">
@@ -492,34 +584,71 @@ export function IncomeRank() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.2 }}
                   >
-                    <div className="daily-income">
-                      <span className="daily-income-value">${dailyIncome.toFixed(2)}</span>
-                      <span className="daily-income-label">{t('per day')}</span>
+                    <div className="poverty-head">
+                      <div className="poverty-title">{t('Poverty Status')}</div>
+                      {basis !== 'PPP' && (
+                        <div className="poverty-note">
+                          <span className="poverty-note-text">{t('Poverty lines are PPP-based.')}</span>
+                          <button
+                            type="button"
+                            className="poverty-note-btn"
+                            onClick={() => setBasis('PPP')}
+                          >
+                            {t('Switch to PPP')}
+                          </button>
+                        </div>
+                      )}
                     </div>
+
+                    <div className="income-breakdown">
+                      <div className="income-chip">
+                        <div className="income-chip-label">{t('per year')}</div>
+                        <div className="income-chip-value mono">{submittedIncome !== null ? usd.format(submittedIncome) : '—'}</div>
+                      </div>
+                      <div className="income-chip">
+                        <div className="income-chip-label">{t('per month')}</div>
+                        <div className="income-chip-value mono">{monthlyIncome ? usd.format(monthlyIncome) : '—'}</div>
+                      </div>
+                      <div className="income-chip">
+                        <div className="income-chip-label">{t('per day')}</div>
+                        <div className="income-chip-value mono">{usdDaily.format(dailyIncome)}</div>
+                      </div>
+                    </div>
+
                     <div className="status-indicators">
-                      <div className={`status-item ${povertyStatus.aboveExtremePoverty ? 'above' : 'below'}`}>
-                        <span className="status-icon">{povertyStatus.aboveExtremePoverty ? '✓' : '✗'}</span>
-                        <span className="status-text">
-                          {t('Extreme poverty line')} (${POVERTY_LINES.extreme.dailyUsd}/day)
-                        </span>
-                      </div>
-                      <div className={`status-item ${povertyStatus.aboveUpperPoverty ? 'above' : 'below'}`}>
-                        <span className="status-icon">{povertyStatus.aboveUpperPoverty ? '✓' : '✗'}</span>
-                        <span className="status-text">
-                          {t('Upper-middle poverty line')} (${POVERTY_LINES.upper.dailyUsd}/day)
-                        </span>
-                      </div>
-                      <div className={`status-item ${povertyStatus.isConsumerClass ? 'above highlight' : 'below'}`}>
-                        <span className="status-icon">{povertyStatus.isConsumerClass ? '✓' : '✗'}</span>
-                        <span className="status-text">
-                          {t('Global consumer class')} (${CONSUMER_CLASS.dailyUsd}+/day)
-                        </span>
-                      </div>
+                      {povertyBenchmarks?.map((b) => (
+                        <div
+                          key={b.id}
+                          className={`status-item ${b.isAbove ? 'above' : 'below'} ${b.highlight ? 'highlight' : ''}`}
+                        >
+                          <div className="status-left">
+                            <span className="status-icon" aria-hidden="true">{b.isAbove ? '✓' : '✗'}</span>
+                            <span className="status-text">
+                              {t(b.labelKey)}{' '}
+                              <span className="status-threshold">
+                                ({usdDaily.format(b.dailyUsd)} {t('per day')}{b.id === 'consumer' ? '+' : ''})
+                              </span>
+                            </span>
+                          </div>
+                          <div className="status-right">
+                            <div className="status-gap mono">{usdDailyDelta.format(b.gapDailyUsd)}</div>
+                            <div className="status-gap-sub">{t('per day')}</div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </motion.div>
                 )}
 
                 <div className="result-details">
+                  <div className="detail-card">
+                    <div className="detail-label">{t('Your income')}</div>
+                    <div className="detail-value mono">
+                      {submittedIncome ? usd.format(submittedIncome) : '—'}
+                    </div>
+                    <div className="detail-sub">{t('per year')}</div>
+                  </div>
+
                   <div className="detail-card">
                     <div className="detail-label">{t('Top earners (out of 8 billion)')}</div>
                     <div className="detail-value">
@@ -572,6 +701,14 @@ export function IncomeRank() {
                     <div className="detail-label">{t('Top 1% starts at')}</div>
                     <div className="detail-value mono">
                       {highlight.top1 ? usd.format(highlight.top1) : '—'}
+                    </div>
+                    <div className="detail-sub">{t('per year')}</div>
+                  </div>
+
+                  <div className="detail-card">
+                    <div className="detail-label">{t('Top 0.1% starts at')}</div>
+                    <div className="detail-value mono">
+                      {highlight.top01 ? usd.format(highlight.top01) : '—'}
                     </div>
                     <div className="detail-sub">{t('per year')}</div>
                   </div>

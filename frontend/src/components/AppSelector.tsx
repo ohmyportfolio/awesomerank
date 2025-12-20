@@ -54,7 +54,7 @@ export const AppSelector = ({ onSelectApp }: AppSelectorProps) => {
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ delay: 0.2, duration: 0.6 }}
             >
-                <h1 className="app-selector-title">Awesome Rank</h1>
+                <h1 className="app-selector-title">{t('Awesome Rank')}</h1>
                 <p className="app-selector-subtitle">{t('app_selector_subtitle')}</p>
             </motion.div>
 

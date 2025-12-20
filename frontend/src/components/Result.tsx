@@ -192,7 +192,7 @@ export const Result = ({ answers, sharedScore, onRestart }: ResultProps) => {
         const shareUrl = `${baseUrl}?app=world-rank&score=${score}`;
 
         const shareData = {
-            title: 'Awesome Rank',
+            title: t('Awesome Rank'),
             text: t('I am in the Top {{score}}% of the global population! #AwesomeRank', { score: displayScore }),
             url: shareUrl,
         };

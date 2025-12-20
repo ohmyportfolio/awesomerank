@@ -114,6 +114,11 @@ button {
   background: none;
 }
 
+.mono {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
 #root {
   width: 100%;
   max-width: 600px;

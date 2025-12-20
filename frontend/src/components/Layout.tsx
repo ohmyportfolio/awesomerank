@@ -57,13 +57,13 @@ export const Layout = ({ children, showBack, showHome, onBack, onHome }: LayoutP
             </main>
 
             <footer className="layout-footer">
-                <span className="footer-brand">Awesome Rank</span>
+                <span className="footer-brand">{t('Awesome Rank')}</span>
                 <a
                     href="https://github.com/hurxxxx/worldrank"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="footer-github"
-                    aria-label="GitHub"
+                    aria-label={t('GitHub')}
                 >
                     <svg
                         width="20"
