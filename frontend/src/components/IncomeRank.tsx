@@ -4,21 +4,18 @@ import { useTranslation } from 'react-i18next';
 import type { IncomeBasis } from '../data/worldIncomeThresholds';
 import { WORLD_INCOME_THRESHOLDS_USD, WORLD_INCOME_WID } from '../data/worldIncomeThresholds';
 import { formatTopPercent, percentileFromIncome, topPercentFromIncome } from '../utils/incomeRank';
+import { getIncomeClass, getPovertyStatus, POVERTY_LINES, CONSUMER_CLASS } from '../data/incomeInsights';
 import { useConsent } from '../contexts/useConsent';
 import './IncomeRank.css';
 
 // Parse URL parameters for shared results
-const getUrlParams = (): { income: number | null; basis: IncomeBasis | null; hh: boolean; adults: number | null } => {
+const getUrlParams = (): { income: number | null; basis: IncomeBasis | null } => {
   const params = new URLSearchParams(window.location.search);
   const income = params.get('income');
   const basis = params.get('basis');
-  const hh = params.get('hh');
-  const adults = params.get('adults');
   return {
     income: income ? parseFloat(income) : null,
     basis: (basis === 'PPP' || basis === 'MER') ? basis as IncomeBasis : null,
-    hh: hh === '1' || hh === 'true',
-    adults: adults ? Number.parseInt(adults, 10) : null,
   };
 };
 
@@ -37,14 +34,6 @@ const parseIncomeInput = (value: string) => {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
-}
-
-function parsePositiveInt(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const n = Number.parseInt(trimmed, 10);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  return n;
 }
 
 function randomId() {
@@ -92,7 +81,6 @@ function getClientData() {
     viewportWidth: window.innerWidth,
     viewportHeight: window.innerHeight,
     pixelRatio: window.devicePixelRatio,
-    platform: navigator.platform,
     connectionType: (navigator as Navigator & { connection?: { effectiveType?: string } }).connection?.effectiveType || 'unknown',
   };
 }
@@ -118,18 +106,7 @@ export function IncomeRank() {
   const urlParams = getUrlParams();
   const [basis, setBasis] = useState<IncomeBasis>(urlParams.basis ?? 'PPP');
   const [incomeText, setIncomeText] = useState(urlParams.income ? urlParams.income.toString() : '');
-  const [isHouseholdIncome, setIsHouseholdIncome] = useState(urlParams.hh);
-  const [householdAdultsText, setHouseholdAdultsText] = useState(
-    urlParams.hh ? (urlParams.adults && urlParams.adults > 0 ? String(urlParams.adults) : '') : ''
-  );
-  const [showRefine, setShowRefine] = useState(false);
-  const [submittedRawIncome, setSubmittedRawIncome] = useState<number | null>(urlParams.income);
-  const [submittedIncome, setSubmittedIncome] = useState<number | null>(() => {
-    if (urlParams.income === null) return null;
-    if (!urlParams.hh) return urlParams.income;
-    const adults = urlParams.adults && urlParams.adults > 0 ? urlParams.adults : null;
-    return adults ? urlParams.income / adults : urlParams.income;
-  });
+  const [submittedIncome, setSubmittedIncome] = useState<number | null>(urlParams.income);
   const [isCalculating, setIsCalculating] = useState(false);
   const [showCopied, setShowCopied] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'skipped' | 'error'>('idle');
@@ -139,11 +116,10 @@ export function IncomeRank() {
   const sessionIdRef = useRef<string>(randomId());
   const attributionRef = useRef(getAttributionData());
 
-  // Clear URL params after initial load to keep URL clean for manual use
+  // Scroll to result after initial load from shared link
   useEffect(() => {
     if (initialLoadRef.current && urlParams.income) {
       initialLoadRef.current = false;
-      // Scroll to result after initial load from shared link
       setTimeout(() => {
         resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }, 500);
@@ -206,16 +182,29 @@ export function IncomeRank() {
     };
   }, [thresholds]);
 
-  const adultsParsed = useMemo(
-    () => (isHouseholdIncome ? parsePositiveInt(householdAdultsText) : null),
-    [isHouseholdIncome, householdAdultsText]
-  );
-
   const medianMultiple = useMemo(() => {
     if (submittedIncome === null) return null;
     if (!highlight.median || highlight.median <= 0) return null;
     return submittedIncome / highlight.median;
   }, [submittedIncome, highlight.median]);
+
+  // Income class (quintile/label) based on percentile
+  const incomeClass = useMemo(() => {
+    if (percentile === null) return null;
+    return getIncomeClass(percentile);
+  }, [percentile]);
+
+  // Poverty status indicators
+  const povertyStatus = useMemo(() => {
+    if (submittedIncome === null) return null;
+    return getPovertyStatus(submittedIncome);
+  }, [submittedIncome]);
+
+  // Daily income calculation
+  const dailyIncome = useMemo(() => {
+    if (submittedIncome === null) return null;
+    return submittedIncome / 365;
+  }, [submittedIncome]);
 
   const nextMilestone = useMemo(() => {
     if (submittedIncome === null) return null;
@@ -235,19 +224,13 @@ export function IncomeRank() {
     const val = parseIncomeInput(incomeText);
     if (val === null) return;
 
-    const adults = isHouseholdIncome ? adultsParsed : null;
-    if (isHouseholdIncome && adults === null) return;
-
-    const effectiveIncome = isHouseholdIncome && adults ? val / adults : val;
-
     setIsCalculating(true);
     setSaveState('idle');
-    setSubmittedRawIncome(val);
     setSubmittedIncome(null);
 
     // Simulate calculation delay for effect
     setTimeout(() => {
-      setSubmittedIncome(effectiveIncome);
+      setSubmittedIncome(val);
       setIsCalculating(false);
       // Wait for re-render then scroll
       setTimeout(() => {
@@ -260,9 +243,9 @@ export function IncomeRank() {
       return;
     }
 
-    const computedPercentile = percentileFromIncome(effectiveIncome, thresholds);
-    const computedTopPercent = topPercentFromIncome(effectiveIncome, thresholds);
-    const computedMedianMultiple = highlight.median ? effectiveIncome / highlight.median : null;
+    const computedPercentile = percentileFromIncome(val, thresholds);
+    const computedTopPercent = topPercentFromIncome(val, thresholds);
+    const computedMedianMultiple = highlight.median ? val / highlight.median : null;
 
     setSaveState('saving');
     submitAppData({
@@ -286,9 +269,6 @@ export function IncomeRank() {
       payload: {
         incomeAnnualUsd: val,
         basis,
-        isHouseholdIncome,
-        householdAdults: adults,
-        effectiveIncomeAnnualUsd: effectiveIncome,
         percentile: computedPercentile,
         topPercent: computedTopPercent,
         medianMultiple: computedMedianMultiple,
@@ -314,11 +294,8 @@ export function IncomeRank() {
     const baseUrl = window.location.origin + window.location.pathname;
     const params = new URLSearchParams();
     params.set('app', 'income-rank');
-    if (submittedRawIncome !== null) params.set('income', String(submittedRawIncome));
+    if (submittedIncome !== null) params.set('income', String(submittedIncome));
     params.set('basis', basis);
-    if (isHouseholdIncome) params.set('hh', '1');
-    const adults = isHouseholdIncome ? adultsParsed : null;
-    if (adults) params.set('adults', String(adults));
     const shareUrl = `${baseUrl}?${params.toString()}`;
 
     const shareData = {
@@ -349,12 +326,6 @@ export function IncomeRank() {
   const basisLabel = basis === 'PPP' ? t('PPP (cost of living adjusted)') : t('Market exchange rate (MER)');
   const worldCode = WORLD_INCOME_WID.countryCodeByBasis[basis];
   const source = WORLD_INCOME_WID.sourceFileByBasis[basis];
-  const effectiveIncomeLabel = useMemo(() => {
-    if (!isHouseholdIncome || submittedRawIncome === null) return null;
-    if (!adultsParsed) return null;
-    const effective = submittedRawIncome / adultsParsed;
-    return usd.format(effective);
-  }, [adultsParsed, isHouseholdIncome, submittedRawIncome, usd]);
 
   return (
     <motion.div
@@ -381,10 +352,6 @@ export function IncomeRank() {
           <p className="income-rank-subtitle">
             {t('Enter your annual income to estimate where you stand globally')}
           </p>
-          <div className="income-tip">
-            <span className="income-tip-dot" />
-            <span className="income-tip-text">{t('Optional details make the comparison more accurate')}</span>
-          </div>
         </motion.div>
 
         <motion.div
@@ -415,25 +382,11 @@ export function IncomeRank() {
               <button
                 className="income-check-btn"
                 onClick={handleCheck}
-                disabled={!incomeText || isCalculating || (isHouseholdIncome && !adultsParsed)}
+                disabled={!incomeText || isCalculating}
               >
                 {isCalculating ? t('Calculating...') : t('Check Rank')}
               </button>
             </div>
-            {isHouseholdIncome && (
-              <div className="income-inline-note">
-                {adultsParsed ? (
-                  <span>
-                    {t('Household income split across {{adults}} adults → {{effective}} per adult', {
-                      adults: adultsParsed,
-                      effective: effectiveIncomeLabel,
-                    })}
-                  </span>
-                ) : (
-                  <span className="income-inline-warn">{t('Add adults to adjust household income')}</span>
-                )}
-              </div>
-            )}
           </div>
 
           <div className="income-row">
@@ -456,76 +409,6 @@ export function IncomeRank() {
                 <span className="basis-chip-sub">{t('Exchange rate')}</span>
               </button>
             </div>
-          </div>
-
-          <div className="income-row">
-            <button
-              type="button"
-              className={`refine-toggle ${showRefine ? 'open' : ''}`}
-              onClick={() => setShowRefine((v) => !v)}
-              aria-expanded={showRefine}
-            >
-              <span className="refine-toggle-title">{t('Refine (optional)')}</span>
-              <span className="refine-toggle-sub">{t('More details → more accurate comparison')}</span>
-              <span className="refine-toggle-icon" aria-hidden="true">▾</span>
-            </button>
-
-            <AnimatePresence initial={false}>
-              {showRefine && (
-                <motion.div
-                  className="refine-panel"
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <div className="refine-field">
-                    <label className="refine-check">
-                      <input
-                        type="checkbox"
-                        checked={isHouseholdIncome}
-                        onChange={(e) => setIsHouseholdIncome(e.target.checked)}
-                      />
-                      <span className="refine-check-text">{t('This is household income')}</span>
-                    </label>
-                    <div className="refine-help">
-                      {t('WID thresholds are “equal-split adults”. If you enter household income, we can split by adults for a fairer comparison.')}
-                    </div>
-                  </div>
-
-                  <AnimatePresence initial={false}>
-                    {isHouseholdIncome && (
-                      <motion.div
-                        className="refine-field"
-                        initial={{ opacity: 0, y: -6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -6 }}
-                        transition={{ duration: 0.18 }}
-                      >
-                        <label className="refine-label" htmlFor="adults-input">
-                          {t('Adults in household')}
-                        </label>
-                        <div className="refine-input-row">
-                          <input
-                            id="adults-input"
-                            className="refine-input"
-                            inputMode="numeric"
-                            autoComplete="off"
-                            placeholder={t('Example: 2')}
-                            value={householdAdultsText}
-                            onChange={(e) => setHouseholdAdultsText(e.target.value.replace(/[^\d]/g, ''))}
-                            aria-invalid={isHouseholdIncome && !adultsParsed}
-                          />
-                          {!adultsParsed && (
-                            <span className="refine-error">{t('Required')}</span>
-                          )}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </motion.div>
-              )}
-            </AnimatePresence>
           </div>
         </motion.div>
 
@@ -554,6 +437,23 @@ export function IncomeRank() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
               >
+                {/* Income Class Badge */}
+                {incomeClass && (
+                  <motion.div
+                    className="income-class-badge"
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ delay: 0.1, type: 'spring' }}
+                    style={{
+                      borderColor: incomeClass.color,
+                      color: incomeClass.color,
+                      boxShadow: `0 0 20px ${incomeClass.color}30`
+                    }}
+                  >
+                    {t(incomeClass.labelKey)}
+                  </motion.div>
+                )}
+
                 <div className="result-topline">
                   <div className="result-copy">
                     <h2 className="result-title">{t('You are in the top')}</h2>
@@ -583,6 +483,41 @@ export function IncomeRank() {
                     </div>
                   </div>
                 </div>
+
+                {/* Poverty & Consumer Class Status */}
+                {povertyStatus && dailyIncome && (
+                  <motion.div
+                    className="poverty-status"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2 }}
+                  >
+                    <div className="daily-income">
+                      <span className="daily-income-value">${dailyIncome.toFixed(2)}</span>
+                      <span className="daily-income-label">{t('per day')}</span>
+                    </div>
+                    <div className="status-indicators">
+                      <div className={`status-item ${povertyStatus.aboveExtremePoverty ? 'above' : 'below'}`}>
+                        <span className="status-icon">{povertyStatus.aboveExtremePoverty ? '✓' : '✗'}</span>
+                        <span className="status-text">
+                          {t('Extreme poverty line')} (${POVERTY_LINES.extreme.dailyUsd}/day)
+                        </span>
+                      </div>
+                      <div className={`status-item ${povertyStatus.aboveUpperPoverty ? 'above' : 'below'}`}>
+                        <span className="status-icon">{povertyStatus.aboveUpperPoverty ? '✓' : '✗'}</span>
+                        <span className="status-text">
+                          {t('Upper-middle poverty line')} (${POVERTY_LINES.upper.dailyUsd}/day)
+                        </span>
+                      </div>
+                      <div className={`status-item ${povertyStatus.isConsumerClass ? 'above highlight' : 'below'}`}>
+                        <span className="status-icon">{povertyStatus.isConsumerClass ? '✓' : '✗'}</span>
+                        <span className="status-text">
+                          {t('Global consumer class')} (${CONSUMER_CLASS.dailyUsd}+/day)
+                        </span>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
 
                 <div className="result-details">
                   <div className="detail-card">
