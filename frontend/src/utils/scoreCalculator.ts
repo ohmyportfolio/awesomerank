@@ -1,6 +1,7 @@
-import { questions } from '../data/questions';
+import { questions, QUESTION_IDS } from '../data/questions';
+import { WORLD_RANK_CALIBRATION } from '../data/worldRankCalibration';
 
-export const SCORE_ALGO_VERSION = 'v2-irt-1d-normal-map';
+export const SCORE_ALGO_VERSION = 'v3-irt-empirical-cdf';
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -10,7 +11,16 @@ const sigmoid = (x: number) => 1 / (1 + Math.exp(-x));
 
 const logit = (p: number) => Math.log(p / (1 - p));
 
-const difficulties = questions.map((q) => -logit(q.probability));
+const fallbackDifficulties = questions.map((q) => -logit(q.probability));
+
+const hasCalibration =
+  WORLD_RANK_CALIBRATION.questionIds.length === QUESTION_IDS.length &&
+  WORLD_RANK_CALIBRATION.questionIds.every((id, idx) => id === QUESTION_IDS[idx]) &&
+  WORLD_RANK_CALIBRATION.thetaQuantiles.length > 1;
+
+const difficulties = hasCalibration
+  ? WORLD_RANK_CALIBRATION.difficulties
+  : fallbackDifficulties;
 
 function erf(x: number) {
   const sign = x >= 0 ? 1 : -1;
@@ -36,6 +46,35 @@ function erf(x: number) {
 
 function normCdf(x: number) {
   return 0.5 * (1 + erf(x / Math.SQRT2));
+}
+
+function percentileFromTheta(theta: number): number {
+  if (!Number.isFinite(theta)) return 50;
+
+  if (!hasCalibration) {
+    return clamp(normCdf(theta) * 100, 0, 100);
+  }
+
+  const quantiles = WORLD_RANK_CALIBRATION.thetaQuantiles;
+  const step = WORLD_RANK_CALIBRATION.quantileStep;
+  const last = quantiles.length - 1;
+
+  if (theta <= quantiles[0]) return 0;
+  if (theta >= quantiles[last]) return 100;
+
+  let lo = 0;
+  let hi = last;
+  while (lo + 1 < hi) {
+    const mid = (lo + hi) >> 1;
+    if (quantiles[mid] <= theta) lo = mid;
+    else hi = mid;
+  }
+
+  const t0 = quantiles[lo];
+  const t1 = quantiles[lo + 1];
+  const p0 = lo * step;
+  const frac = t1 === t0 ? 0 : (theta - t0) / (t1 - t0);
+  return clamp(p0 + frac * step, 0, 100);
 }
 
 export interface TierInfo {
@@ -81,7 +120,7 @@ function estimateThetaMap(answers: boolean[]) {
 }
 
 export interface ScoreResult {
-  score: number; // Top X% (0-100), smaller is better
+  score: number; // Top X% (0-100), smaller is better (empirically calibrated)
   tier: string; // Tier name (English key)
   yesCount: number;
   totalQuestions: number;
@@ -89,8 +128,8 @@ export interface ScoreResult {
 
 export function calculateScore(answers: boolean[]): ScoreResult {
   const theta = estimateThetaMap(answers);
-  const topShare = clamp(1 - normCdf(theta), 0, 1);
-  const score = topShare * 100;
+  const percentile = percentileFromTheta(theta);
+  const score = clamp(100 - percentile, 0, 100);
 
   const tier = getTierInfo(score).key;
   const yesCount = answers.filter(Boolean).length;
@@ -102,4 +141,3 @@ export function calculateScore(answers: boolean[]): ScoreResult {
     totalQuestions: answers.length,
   };
 }
-
