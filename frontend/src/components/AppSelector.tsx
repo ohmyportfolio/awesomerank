@@ -21,7 +21,7 @@ export const AppSelector = ({ onSelectApp }: AppSelectorProps) => {
         {
             id: 'world-rank',
             title: t('Awesome Rank'),
-            description: t('app_world_rank_desc'),
+            description: t('Where do you rank among 8 billion people?'),
             icon: '🌍',
             available: true,
         },
@@ -55,7 +55,7 @@ export const AppSelector = ({ onSelectApp }: AppSelectorProps) => {
                 transition={{ delay: 0.2, duration: 0.6 }}
             >
                 <h1 className="app-selector-title">{t('Awesome Rank')}</h1>
-                <p className="app-selector-subtitle">{t('app_selector_subtitle')}</p>
+                <p className="app-selector-subtitle">{t('Discover where you stand')}</p>
             </motion.div>
 
             <motion.div

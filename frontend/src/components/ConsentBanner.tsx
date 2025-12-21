@@ -31,16 +31,16 @@ export function ConsentBanner() {
             <div className="consent-content">
               <h3 className="consent-title">{t('Privacy Notice')}</h3>
               <p className="consent-text">
-                {t('consent_description')}
+                {t('We collect anonymous data to provide better service and generate global statistics. The following information may be collected:')}
               </p>
               <ul className="consent-data-list">
-                <li>{t('consent_data_demographics')}</li>
-                <li>{t('consent_data_responses')}</li>
-                <li>{t('consent_data_device')}</li>
-                <li>{t('consent_data_location')}</li>
+                <li>{t('Age group and gender (optional)')}</li>
+                <li>{t('Quiz responses, income input (calculator), and response times')}</li>
+                <li>{t('Device type, screen size, browser language')}</li>
+                <li>{t('Approximate location (country/city from IP)')}</li>
               </ul>
               <p className="consent-note">
-                {t('consent_purpose')}
+                {t('Collected data is used only for research and service improvement purposes. We do not sell or share your personal information with third parties.')}
               </p>
               <a href="/privacy" className="consent-link" target="_blank" rel="noopener noreferrer">
                 {t('Read Privacy Policy')}
