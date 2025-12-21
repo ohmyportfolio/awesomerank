@@ -12,7 +12,7 @@ module.exports = {
     locales: ['en', 'ko', 'es', 'pt', 'zh', 'ja', 'fr', 'de', 'it', 'ru', 'hi', 'ar', 'id', 'tr', 'th', 'vi', 'ms', 'fil', 'pl', 'nl', 'cs', 'sk', 'hu', 'el', 'da', 'no', 'sv', 'fi', 'is', 'et', 'lv', 'lt', 'sl', 'he'],
     output: 'src/locales/$LOCALE.json',
     input: ['src/**/*.{ts,tsx}'],
-    sort: true,
+    sort: (a, b) => a.localeCompare(b),
     useKeysAsDefaultValue: false, // 새 키 추가 시 빈 값으로 생성 (번역 누락 파악 용이)
     verbose: true,
     createOldCatalogs: false,
