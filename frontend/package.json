@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "i18n:parse": "i18next --config i18next-parser.config.cjs"
+    "i18n:parse": "i18next --config i18next-parser.config.cjs && node scripts/sync-question-keys.js"
   },
   "dependencies": {
     "classnames": "^2.5.1",
