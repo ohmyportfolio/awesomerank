@@ -395,6 +395,30 @@
     text-align: right;
 }
 
+.map-move-toggle {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.map-move-button {
+    border: 1px solid var(--cc-border);
+    background: rgba(13, 17, 21, 0.7);
+    color: var(--cc-text);
+    padding: 0.4rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.65rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.map-move-button.active {
+    border-color: var(--cc-accent);
+    box-shadow: var(--cc-glow);
+    transform: translateY(-1px);
+}
+
 .legend-item {
     display: inline-flex;
     align-items: center;

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { geoArea, geoEqualEarth, geoPath } from 'd3-geo';
@@ -23,7 +24,7 @@ const EARTH_RADIUS_KM = 6371;
 const VIEWBOX_WIDTH = 900;
 const VIEWBOX_HEIGHT = 600;
 const MIN_ZOOM = 0.6;
-const MAX_ZOOM = 6;
+const MAX_ZOOM = 40;
 const ZOOM_STEP = 0.05;
 const RANKING_LIMIT = 20;
 
@@ -78,16 +79,24 @@ export const CountrySizeCompare = () => {
     const [secondaryId, setSecondaryId] = useState<string>('');
     const [zoom, setZoom] = useState(1);
     const [pan, setPan] = useState({ x: 0, y: 0 });
+    const [primaryOffset, setPrimaryOffset] = useState({ x: 0, y: 0 });
+    const [secondaryOffset, setSecondaryOffset] = useState({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = useState(false);
+    const [dragTarget, setDragTarget] = useState<'both' | 'primary' | 'secondary'>('both');
     const [resolution, setResolution] = useState<'110m' | '10m'>('110m');
     const [showAllRanks, setShowAllRanks] = useState(false);
     const dragStateRef = useRef<{
         startX: number;
         startY: number;
-        originX: number;
-        originY: number;
+        originPanX: number;
+        originPanY: number;
+        originPrimaryX: number;
+        originPrimaryY: number;
+        originSecondaryX: number;
+        originSecondaryY: number;
         scaleX: number;
         scaleY: number;
+        target: 'both' | 'primary' | 'secondary';
     } | null>(null);
 
     useEffect(() => {
@@ -172,8 +181,11 @@ export const CountrySizeCompare = () => {
 
     useEffect(() => {
         setPan({ x: 0, y: 0 });
+        setPrimaryOffset({ x: 0, y: 0 });
+        setSecondaryOffset({ x: 0, y: 0 });
         dragStateRef.current = null;
         setIsDragging(false);
+        setDragTarget('both');
     }, [primaryId, secondaryId, resolution]);
 
     const overlay = useMemo(() => {
@@ -213,10 +225,15 @@ export const CountrySizeCompare = () => {
         return {
             primaryPath,
             secondaryPath,
-            primaryTransform: `${baseTranslate} translate(${-primaryCenter[0]}, ${-primaryCenter[1]})`,
-            secondaryTransform: `${baseTranslate} translate(${-secondaryCenter[0]}, ${-secondaryCenter[1]})`,
+            primaryTransform: `${baseTranslate} translate(${primaryOffset.x - primaryCenter[0]}, ${primaryOffset.y - primaryCenter[1]})`,
+            secondaryTransform: `${baseTranslate} translate(${secondaryOffset.x - secondaryCenter[0]}, ${secondaryOffset.y - secondaryCenter[1]})`,
+            primaryBounds,
+            secondaryBounds,
+            primaryCenter,
+            secondaryCenter,
+            scaled,
         };
-    }, [primary, secondary, zoom, pan]);
+    }, [primary, secondary, zoom, pan, primaryOffset, secondaryOffset]);
 
     const ratioData = useMemo(() => {
         if (!primary || !secondary) return null;
@@ -309,29 +326,116 @@ export const CountrySizeCompare = () => {
         setZoom(clamp(value, MIN_ZOOM, MAX_ZOOM));
     };
 
-    const handlePointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
+    const handlePointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
         const rect = event.currentTarget.getBoundingClientRect();
         dragStateRef.current = {
             startX: event.clientX,
             startY: event.clientY,
-            originX: pan.x,
-            originY: pan.y,
+            originPanX: pan.x,
+            originPanY: pan.y,
+            originPrimaryX: primaryOffset.x,
+            originPrimaryY: primaryOffset.y,
+            originSecondaryX: secondaryOffset.x,
+            originSecondaryY: secondaryOffset.y,
             scaleX: rect.width ? VIEWBOX_WIDTH / rect.width : 1,
             scaleY: rect.height ? VIEWBOX_HEIGHT / rect.height : 1,
+            target: dragTarget,
         };
         setIsDragging(true);
         event.currentTarget.setPointerCapture(event.pointerId);
     };
 
-    const handlePointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
-        if (!dragStateRef.current) return;
-        const { startX, startY, originX, originY, scaleX, scaleY } = dragStateRef.current;
+    const handlePointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
+        if (!dragStateRef.current || !overlay) return;
+        const {
+            startX,
+            startY,
+            originPanX,
+            originPanY,
+            originPrimaryX,
+            originPrimaryY,
+            originSecondaryX,
+            originSecondaryY,
+            scaleX,
+            scaleY,
+            target,
+        } = dragStateRef.current;
         const dx = (event.clientX - startX) * scaleX;
         const dy = (event.clientY - startY) * scaleY;
-        setPan({ x: originX + dx, y: originY + dy });
+        const scaled = overlay.scaled || 1;
+        const dxProjected = dx / scaled;
+        const dyProjected = dy / scaled;
+        const margin = 24;
+
+        const clampOffset = (
+            next: { x: number; y: number },
+            bounds: [[number, number], [number, number]],
+            center: [number, number],
+            panValue: { x: number; y: number },
+        ) => {
+            const minX = (margin - VIEWBOX_WIDTH / 2 - panValue.x) / scaled - (bounds[0][0] - center[0]);
+            const maxX = (VIEWBOX_WIDTH - margin - VIEWBOX_WIDTH / 2 - panValue.x) / scaled - (bounds[1][0] - center[0]);
+            const minY = (margin - VIEWBOX_HEIGHT / 2 - panValue.y) / scaled - (bounds[0][1] - center[1]);
+            const maxY = (VIEWBOX_HEIGHT - margin - VIEWBOX_HEIGHT / 2 - panValue.y) / scaled - (bounds[1][1] - center[1]);
+            const lowX = Math.min(minX, maxX);
+            const highX = Math.max(minX, maxX);
+            const lowY = Math.min(minY, maxY);
+            const highY = Math.max(minY, maxY);
+            return {
+                x: clamp(next.x, lowX, highX),
+                y: clamp(next.y, lowY, highY),
+            };
+        };
+
+        const clampPan = (next: { x: number; y: number }) => {
+            const unionMinX = Math.min(
+                overlay.primaryBounds[0][0] + primaryOffset.x - overlay.primaryCenter[0],
+                overlay.secondaryBounds[0][0] + secondaryOffset.x - overlay.secondaryCenter[0],
+            );
+            const unionMaxX = Math.max(
+                overlay.primaryBounds[1][0] + primaryOffset.x - overlay.primaryCenter[0],
+                overlay.secondaryBounds[1][0] + secondaryOffset.x - overlay.secondaryCenter[0],
+            );
+            const unionMinY = Math.min(
+                overlay.primaryBounds[0][1] + primaryOffset.y - overlay.primaryCenter[1],
+                overlay.secondaryBounds[0][1] + secondaryOffset.y - overlay.secondaryCenter[1],
+            );
+            const unionMaxY = Math.max(
+                overlay.primaryBounds[1][1] + primaryOffset.y - overlay.primaryCenter[1],
+                overlay.secondaryBounds[1][1] + secondaryOffset.y - overlay.secondaryCenter[1],
+            );
+
+            const minX = margin - VIEWBOX_WIDTH / 2 - unionMinX * scaled;
+            const maxX = VIEWBOX_WIDTH - margin - VIEWBOX_WIDTH / 2 - unionMaxX * scaled;
+            const minY = margin - VIEWBOX_HEIGHT / 2 - unionMinY * scaled;
+            const maxY = VIEWBOX_HEIGHT - margin - VIEWBOX_HEIGHT / 2 - unionMaxY * scaled;
+            const lowX = Math.min(minX, maxX);
+            const highX = Math.max(minX, maxX);
+            const lowY = Math.min(minY, maxY);
+            const highY = Math.max(minY, maxY);
+
+            return {
+                x: clamp(next.x, lowX, highX),
+                y: clamp(next.y, lowY, highY),
+            };
+        };
+        if (target === 'both') {
+            const nextPan = { x: originPanX + dx, y: originPanY + dy };
+            setPan(clampPan(nextPan));
+        } else if (target === 'primary') {
+            const nextOffset = { x: originPrimaryX + dxProjected, y: originPrimaryY + dyProjected };
+            setPrimaryOffset(
+                clampOffset(nextOffset, overlay.primaryBounds, overlay.primaryCenter, pan),
+            );
+        } else {
+            const nextOffset = { x: originSecondaryX + dxProjected, y: originSecondaryY + dyProjected };
+            setSecondaryOffset(
+                clampOffset(nextOffset, overlay.secondaryBounds, overlay.secondaryCenter, pan),
+            );
+        }
     };
 
-    const handlePointerEnd = (event: React.PointerEvent<SVGSVGElement>) => {
+    const handlePointerEnd = (event: ReactPointerEvent<SVGSVGElement>) => {
         if (!dragStateRef.current) return;
         dragStateRef.current = null;
         setIsDragging(false);
@@ -537,6 +641,32 @@ export const CountrySizeCompare = () => {
                                         <span className="map-zoom-readout mono">
                                             {Math.round(zoom * 100)}%
                                         </span>
+                                    </div>
+                                </div>
+                                <div className="map-controls">
+                                    <label>{t('Move')}</label>
+                                    <div className="map-move-toggle" role="group" aria-label={t('Move')}>
+                                        <button
+                                            type="button"
+                                            className={`map-move-button${dragTarget === 'both' ? ' active' : ''}`}
+                                            onClick={() => setDragTarget('both')}
+                                        >
+                                            {t('Move both')}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className={`map-move-button${dragTarget === 'primary' ? ' active' : ''}`}
+                                            onClick={() => setDragTarget('primary')}
+                                        >
+                                            {t('Move {{country}}', { country: primary.label })}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className={`map-move-button${dragTarget === 'secondary' ? ' active' : ''}`}
+                                            onClick={() => setDragTarget('secondary')}
+                                        >
+                                            {t('Move {{country}}', { country: secondary.label })}
+                                        </button>
                                     </div>
                                 </div>
                             </div>
