@@ -219,6 +219,12 @@
     line-height: 1.4;
 }
 
+.income-unit-display {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    margin-top: 0.25rem;
+}
+
 .income-helper-row {
     display: flex;
     align-items: center;

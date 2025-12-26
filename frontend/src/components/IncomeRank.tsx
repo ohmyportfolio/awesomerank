@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import type { IncomeBasis } from '../data/worldIncomeThresholds';
 import { WORLD_INCOME_THRESHOLDS_USD, WORLD_INCOME_WID } from '../data/worldIncomeThresholds';
 import { formatTopPercent, percentileFromIncome, topPercentFromIncome } from '../utils/incomeRank';
+import { formatIncomeUnit } from '../utils/formatIncomeUnit';
 import { getIncomeClass, getPovertyStatus, POVERTY_LINES, CONSUMER_CLASS } from '../data/incomeInsights';
 import { COUNTRY_CURRENCY, COUNTRY_CURRENCY_BY_CODE } from '../data/countryCurrency';
 import { useConsent } from '../contexts/useConsent';
@@ -107,6 +108,12 @@ const parseIncomeInput = (value: string) => {
   const n = Number.parseFloat(normalized);
   if (!Number.isFinite(n) || n <= 0) return null;
   return n;
+};
+
+const formatIncomeInput = (value: string): string => {
+  const digits = value.replace(/[^\d]/g, '');
+  if (!digits) return '';
+  return Number(digits).toLocaleString('en-US');
 };
 
 const parseCountInput = (value: string) => {
@@ -273,6 +280,7 @@ export function IncomeRank() {
   const thresholds = WORLD_INCOME_THRESHOLDS_USD[basis];
   const normalizedCurrency = currencyCode.trim().toUpperCase();
   const parsedLocalIncome = useMemo(() => parseIncomeInput(localIncomeText), [localIncomeText]);
+  const incomeUnitDisplay = useMemo(() => formatIncomeUnit(parsedLocalIncome, i18n.language), [parsedLocalIncome, i18n.language]);
   const parsedAdults = useMemo(() => parseCountInput(householdAdults), [householdAdults]);
   const parsedChildren = useMemo(() => parseCountInput(householdChildren), [householdChildren]);
   const equivalenceScale = useMemo(() => {
@@ -854,7 +862,7 @@ export function IncomeRank() {
                   autoComplete="off"
                   placeholder={t('Example: 50,000')}
                   value={localIncomeText}
-                  onChange={(e) => setLocalIncomeText(e.target.value)}
+                  onChange={(e) => setLocalIncomeText(formatIncomeInput(e.target.value))}
                   onKeyDown={handleKeyDown}
                   aria-label={t('Household annual income (pre-tax)')}
                 />
@@ -867,6 +875,11 @@ export function IncomeRank() {
                 {isConversionLoading ? t('Fetching conversion rate...') : isCalculating ? t('Calculating...') : t('Check Rank')}
               </button>
             </div>
+            {incomeUnitDisplay && (
+              <div className="income-unit-display">
+                {incomeUnitDisplay}
+              </div>
+            )}
             <div className="income-helper">
               {t('Enter your total household pre-tax income in your local currency, including wages, business, capital, and transfers.')}
             </div>
