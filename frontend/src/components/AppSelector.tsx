@@ -41,8 +41,8 @@ export const AppSelector = ({ onSelectApp }: AppSelectorProps) => {
         },
         {
             id: 'income-rank',
-            title: t('Income Rank'),
-            description: t('See your income rank worldwide'),
+            title: t('What percent of the world is your living standard?'),
+            description: t('See your global living-standard position'),
             icon: '💰',
             available: true,
         },

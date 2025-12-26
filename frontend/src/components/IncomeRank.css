@@ -69,6 +69,52 @@
     gap: 1rem;
 }
 
+.income-rank-intro {
+    padding: 1.25rem clamp(1.25rem, 4vw, 1.5rem) 0;
+}
+
+.intro-card {
+    border-radius: 18px;
+    padding: 1.2rem 1.25rem;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--glass-border);
+    display: grid;
+    gap: 0.75rem;
+}
+
+.intro-title {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+.intro-copy {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+.intro-list {
+    margin: 0;
+    padding-left: 1.1rem;
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 0.85rem;
+    line-height: 1.5;
+    display: grid;
+    gap: 0.4rem;
+}
+
+.intro-actions {
+    display: flex;
+    justify-content: flex-start;
+}
+
+.intro-btn {
+    width: auto;
+}
+
 .income-row {
     display: grid;
     gap: 0.5rem;
@@ -92,7 +138,8 @@
 }
 
 .income-input-group {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr auto;
     gap: 0.75rem;
     align-items: stretch;
 }
@@ -231,6 +278,7 @@
     justify-content: space-between;
     gap: 0.75rem;
     flex-wrap: wrap;
+    min-height: 1.5rem;
 }
 
 .income-link-btn {
@@ -260,6 +308,8 @@
     box-shadow: 0 0 15px rgba(0, 240, 255, 0.3);
     transition: box-shadow 0.2s ease, opacity 0.2s;
     white-space: nowrap;
+    min-width: 140px;
+    text-align: center;
 }
 
 .income-check-btn:disabled {
@@ -319,6 +369,7 @@
 /* Result Section */
 .income-rank-result {
     padding: 1.25rem clamp(1.25rem, 4vw, 1.5rem);
+    min-height: 120px;
 }
 
 .result-loading {

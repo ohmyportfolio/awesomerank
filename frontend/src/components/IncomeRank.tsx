@@ -218,14 +218,17 @@ export function IncomeRank() {
     date: null,
     source: null,
   });
+  const [pppFallbackToUsd, setPppFallbackToUsd] = useState(false);
   const [incomeYear, setIncomeYear] = useState(urlParams.year ?? String(WORLD_INCOME_WID.year));
   const [submittedIncome, setSubmittedIncome] = useState<number | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
   const [showCopied, setShowCopied] = useState(false);
+  const [showIntro, setShowIntro] = useState(!urlParams.income);
   const [, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'skipped' | 'error'>('idle');
   const resultRef = useRef<HTMLDivElement>(null);
   const initialLoadRef = useRef(true);
   const autoSubmitRef = useRef(Boolean(urlParams.income));
+  const prevCountryRef = useRef<string | null>(null);
   const startedAtRef = useRef<number>(Date.now());
   const sessionIdRef = useRef<string>(randomId());
   const attributionRef = useRef(getAttributionData());
@@ -241,7 +244,30 @@ export function IncomeRank() {
   }, [urlParams.income]);
 
   useEffect(() => {
+    if (urlParams.income) setShowIntro(false);
+  }, [urlParams.income]);
+
+  useEffect(() => {
+    if (basis !== 'PPP' && pppFallbackToUsd) {
+      setPppFallbackToUsd(false);
+    }
+  }, [basis, pppFallbackToUsd]);
+
+  useEffect(() => {
     if (!countryCode) return;
+    if (prevCountryRef.current && prevCountryRef.current !== countryCode) {
+      setPppFallbackToUsd(false);
+    }
+    prevCountryRef.current = countryCode;
+  }, [countryCode]);
+
+  useEffect(() => {
+    if (!countryCode) return;
+    if (pppFallbackToUsd) {
+      setCurrencyCode('USD');
+      setCurrencyLocked(true);
+      return;
+    }
     if (countryCode === 'OTHER') {
       setCurrencyLocked(false);
       setConversionLocked(false);
@@ -255,7 +281,7 @@ export function IncomeRank() {
     } else {
       setCurrencyLocked(false);
     }
-  }, [countryCode, currencyCode]);
+  }, [countryCode, currencyCode, pppFallbackToUsd]);
 
   const regionNames = useMemo(() => {
     if (typeof Intl !== 'undefined' && 'DisplayNames' in Intl) {
@@ -436,11 +462,6 @@ export function IncomeRank() {
     return submittedIncome / 12;
   }, [submittedIncome]);
 
-  const dailyPpp = useMemo(() => {
-    if (convertedIncomeUsd === null) return null;
-    return convertedIncomeUsd / 365;
-  }, [convertedIncomeUsd]);
-
   const oneInPeople = useMemo(() => {
     if (topPercent === null) return null;
     if (!Number.isFinite(topPercent) || topPercent <= 0) return null;
@@ -538,12 +559,15 @@ export function IncomeRank() {
       return { value: rate, date: data.date ? String(data.date) : null };
     };
 
-    const primary = await fetch(primaryUrl).then((res) => res.json());
-    const parsedPrimary = parseFrankfurter(primary);
-    if (parsedPrimary) return parsedPrimary;
+    const primaryRes = await fetch(primaryUrl);
+    if (primaryRes.ok) {
+      const parsedPrimary = parseFrankfurter(await primaryRes.json());
+      if (parsedPrimary) return parsedPrimary;
+    }
 
-    const fallback = await fetch(fallbackUrl).then((res) => res.json());
-    return parseFrankfurter(fallback);
+    const fallbackRes = await fetch(fallbackUrl);
+    if (!fallbackRes.ok) return null;
+    return parseFrankfurter(await fallbackRes.json());
   };
 
   useEffect(() => {
@@ -552,19 +576,21 @@ export function IncomeRank() {
       setConversionText('');
       setConversionStatus('error');
       setConversionMeta({ date: null, source: null });
+      setPppFallbackToUsd(false);
       return;
     }
     if (!incomeYear.trim()) {
       setConversionText('');
       setConversionStatus('error');
       setConversionMeta({ date: null, source: null });
+      setPppFallbackToUsd(false);
       return;
     }
 
     if (normalizedCurrency === 'USD') {
       setConversionText('1');
       setConversionStatus('success');
-      setConversionMeta({ date: null, source: basis });
+      setConversionMeta({ date: null, source: pppFallbackToUsd ? null : basis });
       return;
     }
 
@@ -575,11 +601,21 @@ export function IncomeRank() {
       try {
         if (basis === 'PPP') {
           const result = await fetchPPPConversion(countryCode.toLowerCase(), incomeYear);
-          if (!result) throw new Error('PPP unavailable');
+          if (!result) {
+            if (!isActive) return;
+            setPppFallbackToUsd(true);
+            setCurrencyCode('USD');
+            setCurrencyLocked(true);
+            setConversionText('1');
+            setConversionMeta({ date: null, source: null });
+            setConversionStatus('success');
+            return;
+          }
           if (!isActive) return;
           setConversionText(String(result.value));
           setConversionMeta({ date: result.date || null, source: 'PPP' });
           setConversionStatus('success');
+          setPppFallbackToUsd(false);
           return;
         }
 
@@ -589,11 +625,13 @@ export function IncomeRank() {
         setConversionText(String(result.value));
         setConversionMeta({ date: result.date || null, source: 'MER' });
         setConversionStatus('success');
+        setPppFallbackToUsd(false);
       } catch (error) {
         if (!isActive) return;
         setConversionText('');
         setConversionStatus('error');
         setConversionMeta({ date: null, source: null });
+        setPppFallbackToUsd(false);
       }
     };
 
@@ -724,7 +762,7 @@ export function IncomeRank() {
 
     const shareData = {
       title: t('Awesome Rank'),
-      text: t('My income is in the Top {{score}} worldwide. Check yours:', { score: topLabel }),
+      text: t('My living standard is in the Top {{score}} worldwide. Check yours:', { score: topLabel }),
       url: shareUrl,
     };
 
@@ -781,18 +819,50 @@ export function IncomeRank() {
           transition={{ delay: 0.12 }}
         >
           <div className="income-rank-kicker">{t('New')}</div>
-          <h1 className="income-rank-title">{t('Income Rank')}</h1>
+          <h1 className="income-rank-title">{t('What percent of the world is your living standard?')}</h1>
           <p className="income-rank-subtitle">
             {t('Enter your household pre-tax income to estimate where you stand globally.')}
           </p>
         </motion.div>
 
-        <motion.div
-          className="income-rank-form"
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.18 }}
-        >
+        {showIntro && (
+          <motion.div
+            className="income-rank-intro"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.16 }}
+          >
+            <div className="intro-card">
+              <h2 className="intro-title">{t('Before you calculate')}</h2>
+              <p className="intro-copy">
+                {t('This app shows your global living-standard position, not a raw income rank.')}
+              </p>
+              <ul className="intro-list">
+                <li>{t('PPP compares what your income can buy in your country, not the exchange rate.')}</li>
+                <li>{t('A higher salary in a high-cost country can feel lower than a smaller salary in a low-cost country.')}</li>
+                <li>{t('Example: $100,000 in Switzerland may not mean a higher living standard than $60,000 in the Philippines.')}</li>
+                <li>{t('We use pre-tax household income and adjust for household size (OECD scale).')}</li>
+              </ul>
+              <div className="intro-actions">
+                <button
+                  type="button"
+                  className="income-check-btn intro-btn"
+                  onClick={() => setShowIntro(false)}
+                >
+                  {t('Continue to income input')}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {!showIntro && (
+          <motion.div
+            className="income-rank-form"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.18 }}
+          >
           <div className="income-row">
             <label className="income-label" htmlFor="country-select">
               {t('Country or region')}
@@ -820,7 +890,7 @@ export function IncomeRank() {
                     ? t('Currency auto-set to {{currency}} based on your country.', { currency: formatCurrencyWithSymbol(normalizedCurrency, i18n.language) || t('Unknown') })
                     : t('Custom currency enabled.')}
               </span>
-              {countryCode !== 'OTHER' && (
+              {countryCode !== 'OTHER' && !pppFallbackToUsd && (
                 <button
                   type="button"
                   className="income-link-btn"
@@ -872,14 +942,12 @@ export function IncomeRank() {
                 onClick={handleCheck}
                 disabled={!canCalculate || isCalculating || isConversionLoading}
               >
-                {isConversionLoading ? t('Fetching conversion rate...') : isCalculating ? t('Calculating...') : t('Check Rank')}
+                {isConversionLoading || isCalculating ? t('Loading...') : t('Check Rank')}
               </button>
             </div>
-            {incomeUnitDisplay && (
-              <div className="income-unit-display">
-                {incomeUnitDisplay}
-              </div>
-            )}
+            <div className="income-unit-display" style={{ minHeight: '1rem', visibility: incomeUnitDisplay ? 'visible' : 'hidden' }}>
+              {incomeUnitDisplay || '\u00A0'}
+            </div>
             <div className="income-helper">
               {t('Enter your total household pre-tax income in your local currency, including wages, business, capital, and transfers.')}
             </div>
@@ -976,38 +1044,42 @@ export function IncomeRank() {
               <div className="income-helper-row">
                 <span className="income-helper">
                   {conversionLocked
-                    ? conversionStatus === 'loading'
-                      ? t('Fetching conversion rate...')
-                      : conversionStatus === 'success'
-                        ? t('Auto conversion from {{source}}', {
-                            source: conversionMeta.source === 'PPP' ? t('PPP') : t('Market exchange rate (MER)'),
-                          })
-                        : t('Auto conversion failed. Enter manually.')
+                    ? pppFallbackToUsd
+                      ? t('PPP data is unavailable for this country. Enter your income in USD.')
+                      : conversionStatus === 'loading'
+                        ? t('Fetching conversion rate...')
+                        : conversionStatus === 'success'
+                          ? t('Auto conversion from {{source}}', {
+                              source: conversionMeta.source === 'PPP' ? t('PPP') : t('Market exchange rate (MER)'),
+                            })
+                          : t('Auto conversion failed. Enter manually.')
                     : t('Manual conversion enabled.')}
-                  {conversionLocked && conversionStatus === 'success' && conversionMeta.date
+                  {conversionLocked && conversionStatus === 'success' && conversionMeta.date && !pppFallbackToUsd
                     ? ` ${t('Updated {{date}}', { date: conversionMeta.date })}`
                     : ''}
                 </span>
-                <button
-                  type="button"
-                  className="income-link-btn"
-                  onClick={handleConversionToggle}
-                >
-                  {conversionLocked ? t('Edit conversion') : t('Use auto conversion')}
-                </button>
+                {!pppFallbackToUsd && (
+                  <button
+                    type="button"
+                    className="income-link-btn"
+                    onClick={handleConversionToggle}
+                  >
+                    {conversionLocked ? t('Edit conversion') : t('Use auto conversion')}
+                  </button>
+                )}
               </div>
               <div className="income-helper">{t('If your income is already in USD, use 1.')}</div>
             </div>
           </div>
 
-          {convertedIncomeUsd !== null && (
-            <div className="income-row">
+          <div className="income-row" style={{ minHeight: '1.25rem' }}>
+            {convertedIncomeUsd !== null && (
               <div className="income-helper">
                 {t('Per-person income (USD)')}:{' '}
                 <span className="mono">{usd.format(convertedIncomeUsd)}</span>
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           <div className="income-row">
             <div className="income-label">{t('Income basis')}</div>
@@ -1032,32 +1104,34 @@ export function IncomeRank() {
             <div className="basis-help">{basisHelp}</div>
           </div>
         </motion.div>
+        )}
 
-        <motion.div
-          className="income-rank-result"
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.24 }}
-          ref={resultRef}
-        >
-          <AnimatePresence mode="wait">
-            {isCalculating ? (
-              <motion.div
-                key="loading"
-                className="result-loading"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-              >
-                <div className="loading-spinner"></div>
-                <div className="loading-text">{t('Analyzing global data...')}</div>
-              </motion.div>
-            ) : topLabel ? (
-              <motion.div
-                key="result"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-              >
+        {!showIntro && (
+          <motion.div
+            className="income-rank-result"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.24 }}
+            ref={resultRef}
+          >
+            <AnimatePresence mode="wait">
+              {isCalculating ? (
+                <motion.div
+                  key="loading"
+                  className="result-loading"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                >
+                  <div className="loading-spinner"></div>
+                  <div className="loading-text">{t('Analyzing global data...')}</div>
+                </motion.div>
+              ) : topLabel ? (
+                <motion.div
+                  key="result"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                >
                 {/* Income Class Badge */}
                 {incomeClass && (
                   <motion.div
@@ -1106,9 +1180,10 @@ export function IncomeRank() {
                       {basis === 'MER'
                         ? t('MER results can change with exchange rates.')
                         : t('PPP reflects cost of living differences.')}
+                      {basis === 'PPP' ? ` ${t('PPP ranking reflects living standards, not raw income.')}` : ''}
                     </p>
                   </div>
-                  <div className="result-stamp" aria-label={t('Income rank result')}>
+                    <div className="result-stamp" aria-label={t('Living standard result')}>
                     <div className="stamp-inner">
                       <div className="stamp-top">{t('TOP')}</div>
                       <div className="stamp-value">{topLabel}</div>
@@ -1325,26 +1400,27 @@ export function IncomeRank() {
                     {showCopied ? t('Copied!') : t('Share Rank')}
                   </button>
                 </div>
-              </motion.div>
-            ) : (
-              <motion.div
-                key="empty"
-                className="result-empty"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-              >
-                <div className="empty-led">
-                  <span className="empty-dot" />
-                  <span className="empty-text">{t('Type an amount to see your rank')}</span>
-                </div>
-                <p className="empty-note">
-                  {t('Results are calculated instantly. If you allow data collection, we save anonymized results to improve global stats.')}
-                </p>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </motion.div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="empty"
+                  className="result-empty"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                >
+                  <div className="empty-led">
+                    <span className="empty-dot" />
+                    <span className="empty-text">{t('Type an amount to see your rank')}</span>
+                  </div>
+                  <p className="empty-note">
+                    {t('Results are calculated instantly. If you allow data collection, we save anonymized results to improve global stats.')}
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        )}
 
         <motion.div
           className="income-rank-foot"
