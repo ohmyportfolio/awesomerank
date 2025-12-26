@@ -6,6 +6,12 @@ import en from './locales/en.json';
 import ko from './locales/ko.json';
 import es from './locales/es.json';
 
+export const languages = [
+    { code: 'en', label: 'English' },
+    { code: 'ko', label: '한국어' },
+    { code: 'es', label: 'Español' },
+];
+
 i18n
     .use(LanguageDetector)
     .use(initReactI18next)

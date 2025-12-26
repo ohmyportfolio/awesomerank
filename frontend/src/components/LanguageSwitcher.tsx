@@ -1,44 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
+import { languages } from '../i18n';
 import './LanguageSwitcher.css';
-
-const languages = [
-    { code: 'en', label: 'English' },
-    { code: 'ko', label: '한국어' },
-    { code: 'es', label: 'Español' },
-    { code: 'pt', label: 'Português' },
-    { code: 'zh', label: '中文' },
-    { code: 'ja', label: '日本語' },
-    { code: 'fr', label: 'Français' },
-    { code: 'de', label: 'Deutsch' },
-    { code: 'it', label: 'Italiano' },
-    { code: 'ru', label: 'Русский' },
-    { code: 'hi', label: 'हिन्दी' },
-    { code: 'ar', label: 'العربية' },
-    { code: 'id', label: 'Bahasa Indonesia' },
-    { code: 'tr', label: 'Türkçe' },
-    { code: 'th', label: 'ไทย' },
-    { code: 'vi', label: 'Tiếng Việt' },
-    { code: 'ms', label: 'Bahasa Melayu' },
-    { code: 'fil', label: 'Filipino' },
-    { code: 'pl', label: 'Polski' },
-    { code: 'nl', label: 'Nederlands' },
-    { code: 'cs', label: 'Čeština' },
-    { code: 'sk', label: 'Slovenčina' },
-    { code: 'hu', label: 'Magyar' },
-    { code: 'el', label: 'Ελληνικά' },
-    { code: 'da', label: 'Dansk' },
-    { code: 'no', label: 'Norsk' },
-    { code: 'sv', label: 'Svenska' },
-    { code: 'fi', label: 'Suomi' },
-    { code: 'is', label: 'Íslenska' },
-    { code: 'et', label: 'Eesti' },
-    { code: 'lv', label: 'Latviešu' },
-    { code: 'lt', label: 'Lietuvių' },
-    { code: 'sl', label: 'Slovenščina' },
-    { code: 'he', label: 'עברית' },
-];
 
 export const LanguageSwitcher = () => {
     const { i18n } = useTranslation();

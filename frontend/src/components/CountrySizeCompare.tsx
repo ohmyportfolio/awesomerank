@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { geoArea, geoEqualEarth, geoPath } from 'd3-geo';
+import officialAreaByIso3 from '../data/officialAreaByIso3';
 import './CountrySizeCompare.css';
 
 type CountryProperties = Record<string, string | number | null>;
@@ -10,9 +11,11 @@ type GeoCollection = GeoJSON.FeatureCollection<GeoJSON.Geometry, CountryProperti
 
 type CountryEntry = {
     id: string;
+    iso3: string;
     label: string;
     name: string;
     areaKm2: number;
+    officialAreaKm2: number | null;
     feature: CountryFeature;
 };
 
@@ -20,8 +23,9 @@ const EARTH_RADIUS_KM = 6371;
 const VIEWBOX_WIDTH = 900;
 const VIEWBOX_HEIGHT = 600;
 const MIN_ZOOM = 0.6;
-const MAX_ZOOM = 2.6;
+const MAX_ZOOM = 6;
 const ZOOM_STEP = 0.05;
+const RANKING_LIMIT = 20;
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
@@ -73,12 +77,26 @@ export const CountrySizeCompare = () => {
     const [primaryId, setPrimaryId] = useState<string>('');
     const [secondaryId, setSecondaryId] = useState<string>('');
     const [zoom, setZoom] = useState(1);
+    const [pan, setPan] = useState({ x: 0, y: 0 });
+    const [isDragging, setIsDragging] = useState(false);
+    const [resolution, setResolution] = useState<'110m' | '10m'>('110m');
+    const [showAllRanks, setShowAllRanks] = useState(false);
+    const dragStateRef = useRef<{
+        startX: number;
+        startY: number;
+        originX: number;
+        originY: number;
+        scaleX: number;
+        scaleY: number;
+    } | null>(null);
 
     useEffect(() => {
         let mounted = true;
         const load = async () => {
             try {
-                const response = await fetch('/data/countries-110m.geojson');
+                setLoading(true);
+                setError(false);
+                const response = await fetch(`/data/countries-${resolution}.geojson`);
                 if (!response.ok) throw new Error('failed to fetch');
                 const data = (await response.json()) as GeoCollection;
                 if (mounted) {
@@ -95,7 +113,7 @@ export const CountrySizeCompare = () => {
         return () => {
             mounted = false;
         };
-    }, []);
+    }, [resolution]);
 
     const countries = useMemo(() => {
         return features
@@ -103,11 +121,15 @@ export const CountrySizeCompare = () => {
                 const areaSteradians = geoArea(feature);
                 const areaKm2 = areaSteradians * EARTH_RADIUS_KM * EARTH_RADIUS_KM;
                 const name = (feature.properties.NAME_EN as string) || (feature.properties.ADMIN as string) || 'Unknown';
+                const iso3 = String(feature.properties.ADM0_A3 || feature.properties.ISO_A3 || '');
+                const officialAreaKm2 = iso3 ? (officialAreaByIso3 as Record<string, number | undefined>)[iso3] ?? null : null;
                 return {
-                    id: String(feature.properties.ADM0_A3 || name),
+                    id: iso3 || name,
+                    iso3,
                     label: getLocalizedName(feature.properties, i18n.language),
                     name,
                     areaKm2,
+                    officialAreaKm2,
                     feature,
                 } satisfies CountryEntry;
             })
@@ -133,8 +155,10 @@ export const CountrySizeCompare = () => {
 
     const autoZoom = useMemo(() => {
         if (!primary || !secondary) return 1;
-        const biggerArea = Math.max(primary.areaKm2, secondary.areaKm2);
-        const smallerArea = Math.max(1, Math.min(primary.areaKm2, secondary.areaKm2));
+        const primaryArea = primary.officialAreaKm2 ?? primary.areaKm2;
+        const secondaryArea = secondary.officialAreaKm2 ?? secondary.areaKm2;
+        const biggerArea = Math.max(primaryArea, secondaryArea);
+        const smallerArea = Math.max(1, Math.min(primaryArea, secondaryArea));
         const areaRatio = biggerArea / smallerArea;
         const sizeRatio = Math.sqrt(areaRatio);
         const boost = Math.log10(sizeRatio) * 0.6;
@@ -145,6 +169,12 @@ export const CountrySizeCompare = () => {
         if (!primary || !secondary) return;
         setZoom(autoZoom);
     }, [autoZoom, primary, secondary]);
+
+    useEffect(() => {
+        setPan({ x: 0, y: 0 });
+        dragStateRef.current = null;
+        setIsDragging(false);
+    }, [primaryId, secondaryId, resolution]);
 
     const overlay = useMemo(() => {
         if (!primary || !secondary) return null;
@@ -178,7 +208,7 @@ export const CountrySizeCompare = () => {
             (secondaryBounds[0][1] + secondaryBounds[1][1]) / 2,
         ];
 
-        const baseTranslate = `translate(${VIEWBOX_WIDTH / 2}, ${VIEWBOX_HEIGHT / 2}) scale(${scaled})`;
+        const baseTranslate = `translate(${VIEWBOX_WIDTH / 2 + pan.x}, ${VIEWBOX_HEIGHT / 2 + pan.y}) scale(${scaled})`;
 
         return {
             primaryPath,
@@ -186,11 +216,13 @@ export const CountrySizeCompare = () => {
             primaryTransform: `${baseTranslate} translate(${-primaryCenter[0]}, ${-primaryCenter[1]})`,
             secondaryTransform: `${baseTranslate} translate(${-secondaryCenter[0]}, ${-secondaryCenter[1]})`,
         };
-    }, [primary, secondary, zoom]);
+    }, [primary, secondary, zoom, pan]);
 
     const ratioData = useMemo(() => {
         if (!primary || !secondary) return null;
-        const ratio = primary.areaKm2 / secondary.areaKm2;
+        const primaryArea = primary.officialAreaKm2 ?? primary.areaKm2;
+        const secondaryArea = secondary.officialAreaKm2 ?? secondary.areaKm2;
+        const ratio = primaryArea / secondaryArea;
         const bigger = ratio >= 1 ? primary : secondary;
         const smaller = ratio >= 1 ? secondary : primary;
         const normalizedRatio = ratio >= 1 ? ratio : 1 / ratio;
@@ -198,6 +230,73 @@ export const CountrySizeCompare = () => {
             ratio: normalizedRatio,
             bigger,
             smaller,
+        };
+    }, [primary, secondary]);
+
+    const rankedCountries = useMemo(() => {
+        return [...countries]
+            .map((country) => ({
+                ...country,
+                rankingAreaKm2: country.officialAreaKm2 ?? country.areaKm2,
+            }))
+            .sort((a, b) => b.rankingAreaKm2 - a.rankingAreaKm2);
+    }, [countries]);
+
+    const rankById = useMemo(() => {
+        const map = new Map<string, number>();
+        rankedCountries.forEach((country, index) => {
+            map.set(country.id, index + 1);
+        });
+        return map;
+    }, [rankedCountries]);
+
+    const areaBlocks = useMemo(() => {
+        if (!primary || !secondary) return null;
+        const primaryArea = primary.officialAreaKm2 ?? primary.areaKm2;
+        const secondaryArea = secondary.officialAreaKm2 ?? secondary.areaKm2;
+        const primarySize = Math.sqrt(primaryArea);
+        const secondarySize = Math.sqrt(secondaryArea);
+        const width = 900;
+        const height = 320;
+        const gap = 60;
+        const maxHeight = Math.max(primarySize, secondarySize);
+        const scale = Math.min((width - gap) / (primarySize + secondarySize), height / maxHeight);
+        const primaryWidth = primarySize * scale;
+        const primaryHeight = primarySize * scale;
+        const secondaryWidth = secondarySize * scale;
+        const secondaryHeight = secondarySize * scale;
+        const startX = (width - (primaryWidth + secondaryWidth + gap)) / 2;
+        return {
+            width,
+            height,
+            primaryRect: {
+                x: startX,
+                y: (height - primaryHeight) / 2,
+                width: primaryWidth,
+                height: primaryHeight,
+            },
+            secondaryRect: {
+                x: startX + primaryWidth + gap,
+                y: (height - secondaryHeight) / 2,
+                width: secondaryWidth,
+                height: secondaryHeight,
+            },
+        };
+    }, [primary, secondary]);
+
+    const areaDifferences = useMemo(() => {
+        const build = (country: CountryEntry) => {
+            if (!country.officialAreaKm2) return null;
+            const delta = ((country.areaKm2 - country.officialAreaKm2) / country.officialAreaKm2) * 100;
+            return {
+                delta,
+                direction: delta < 0 ? 'smaller' : 'larger',
+                magnitude: Math.abs(delta),
+            };
+        };
+        return {
+            primary: primary ? build(primary) : null,
+            secondary: secondary ? build(secondary) : null,
         };
     }, [primary, secondary]);
 
@@ -209,6 +308,41 @@ export const CountrySizeCompare = () => {
     const handleZoomChange = (value: number) => {
         setZoom(clamp(value, MIN_ZOOM, MAX_ZOOM));
     };
+
+    const handlePointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        dragStateRef.current = {
+            startX: event.clientX,
+            startY: event.clientY,
+            originX: pan.x,
+            originY: pan.y,
+            scaleX: rect.width ? VIEWBOX_WIDTH / rect.width : 1,
+            scaleY: rect.height ? VIEWBOX_HEIGHT / rect.height : 1,
+        };
+        setIsDragging(true);
+        event.currentTarget.setPointerCapture(event.pointerId);
+    };
+
+    const handlePointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
+        if (!dragStateRef.current) return;
+        const { startX, startY, originX, originY, scaleX, scaleY } = dragStateRef.current;
+        const dx = (event.clientX - startX) * scaleX;
+        const dy = (event.clientY - startY) * scaleY;
+        setPan({ x: originX + dx, y: originY + dy });
+    };
+
+    const handlePointerEnd = (event: React.PointerEvent<SVGSVGElement>) => {
+        if (!dragStateRef.current) return;
+        dragStateRef.current = null;
+        setIsDragging(false);
+        event.currentTarget.releasePointerCapture(event.pointerId);
+    };
+
+    const primaryAreaDisplay = primary ? (primary.officialAreaKm2 ?? primary.areaKm2) : null;
+    const secondaryAreaDisplay = secondary ? (secondary.officialAreaKm2 ?? secondary.areaKm2) : null;
+    const primaryRank = primary ? rankById.get(primary.id) ?? null : null;
+    const secondaryRank = secondary ? rankById.get(secondary.id) ?? null : null;
+    const rankingList = showAllRanks ? rankedCountries : rankedCountries.slice(0, RANKING_LIMIT);
 
     return (
         <motion.section
@@ -281,6 +415,23 @@ export const CountrySizeCompare = () => {
                 </div>
             </div>
 
+            <div className="country-compare-options">
+                <div className="country-compare-select">
+                    <label htmlFor="map-resolution">{t('Map detail')}</label>
+                    <select
+                        id="map-resolution"
+                        value={resolution}
+                        onChange={(event) => setResolution(event.target.value as '110m' | '10m')}
+                    >
+                        <option value="110m">{t('Fast (110m)')}</option>
+                        <option value="10m">{t('High detail (10m)')}</option>
+                    </select>
+                </div>
+                <p className="country-compare-note">
+                    {t('Areas use CIA World Factbook totals.')}
+                </p>
+            </div>
+
             {loading && (
                 <div className="country-compare-message">{t('Loading countries...')}</div>
             )}
@@ -296,14 +447,20 @@ export const CountrySizeCompare = () => {
                             <span className="stat-label">{t('Area')}</span>
                             <h3>{primary.label}</h3>
                             <p className="stat-value mono">
-                                {formatArea(primary.areaKm2, i18n.language)} {t('km^2')}
+                                {primaryAreaDisplay ? formatArea(primaryAreaDisplay, i18n.language) : '--'} {t('km^2')}
+                            </p>
+                            <p className="stat-rank">
+                                {primaryRank ? t('Rank #{{rank}}', { rank: primaryRank }) : t('Rank unavailable')}
                             </p>
                         </div>
                         <div className="country-compare-stat secondary">
                             <span className="stat-label">{t('Area')}</span>
                             <h3>{secondary.label}</h3>
                             <p className="stat-value mono">
-                                {formatArea(secondary.areaKm2, i18n.language)} {t('km^2')}
+                                {secondaryAreaDisplay ? formatArea(secondaryAreaDisplay, i18n.language) : '--'} {t('km^2')}
+                            </p>
+                            <p className="stat-rank">
+                                {secondaryRank ? t('Rank #{{rank}}', { rank: secondaryRank }) : t('Rank unavailable')}
                             </p>
                         </div>
                         <div className="country-compare-stat ratio">
@@ -384,7 +541,7 @@ export const CountrySizeCompare = () => {
                                 </div>
                             </div>
                         </div>
-                        <div className="map-stage">
+                        <div className={`map-stage${isDragging ? ' dragging' : ''}`}>
                             <svg
                                 viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
                                 role="img"
@@ -392,6 +549,10 @@ export const CountrySizeCompare = () => {
                                     countryA: primary.label,
                                     countryB: secondary.label,
                                 })}
+                                onPointerDown={handlePointerDown}
+                                onPointerMove={handlePointerMove}
+                                onPointerUp={handlePointerEnd}
+                                onPointerCancel={handlePointerEnd}
                             >
                                 {overlay && (
                                     <>
@@ -409,7 +570,131 @@ export const CountrySizeCompare = () => {
                                 )}
                             </svg>
                         </div>
-                        <p className="map-footnote">{t('Map data: Natural Earth 1:110m.')}</p>
+                        <p className="map-footnote">
+                            {t('Map data: Natural Earth 1:{{scale}}.', { scale: resolution })}
+                        </p>
+                    </motion.div>
+
+                    <motion.div
+                        className="country-compare-blocks"
+                        initial={{ y: 18, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        transition={{ duration: 0.6, delay: 0.1 }}
+                    >
+                        <div className="map-header">
+                            <div className="map-title">
+                                <h2>{t('Area blocks (official)')}</h2>
+                                <p>{t('Squares are sized by official total area.')}</p>
+                            </div>
+                            <div className="map-legend">
+                                <span className="legend-item primary">
+                                    <span className="legend-dot" />
+                                    {primary.label}
+                                </span>
+                                <span className="legend-item secondary">
+                                    <span className="legend-dot" />
+                                    {secondary.label}
+                                </span>
+                            </div>
+                        </div>
+                        <div className="block-stage">
+                            <svg viewBox="0 0 900 320" role="img" aria-label={t('Area blocks (official)')}>
+                                {areaBlocks && (
+                                    <>
+                                        <rect
+                                            className="block-rect primary"
+                                            x={areaBlocks.primaryRect.x}
+                                            y={areaBlocks.primaryRect.y}
+                                            width={areaBlocks.primaryRect.width}
+                                            height={areaBlocks.primaryRect.height}
+                                        />
+                                        <rect
+                                            className="block-rect secondary"
+                                            x={areaBlocks.secondaryRect.x}
+                                            y={areaBlocks.secondaryRect.y}
+                                            width={areaBlocks.secondaryRect.width}
+                                            height={areaBlocks.secondaryRect.height}
+                                        />
+                                    </>
+                                )}
+                            </svg>
+                        </div>
+                        <div className="block-diff">
+                            {primary && (
+                                <p>
+                                    {areaDifferences.primary
+                                        ? areaDifferences.primary.direction === 'smaller'
+                                            ? t('Map polygon is {{value}}% smaller than official area for {{country}}.', {
+                                                value: formatRatio(areaDifferences.primary.magnitude, i18n.language),
+                                                country: primary.label,
+                                            })
+                                            : t('Map polygon is {{value}}% larger than official area for {{country}}.', {
+                                                value: formatRatio(areaDifferences.primary.magnitude, i18n.language),
+                                                country: primary.label,
+                                            })
+                                        : t('Official area unavailable for {{country}}; using map polygon.', {
+                                            country: primary.label,
+                                        })}
+                                </p>
+                            )}
+                            {secondary && (
+                                <p>
+                                    {areaDifferences.secondary
+                                        ? areaDifferences.secondary.direction === 'smaller'
+                                            ? t('Map polygon is {{value}}% smaller than official area for {{country}}.', {
+                                                value: formatRatio(areaDifferences.secondary.magnitude, i18n.language),
+                                                country: secondary.label,
+                                            })
+                                            : t('Map polygon is {{value}}% larger than official area for {{country}}.', {
+                                                value: formatRatio(areaDifferences.secondary.magnitude, i18n.language),
+                                                country: secondary.label,
+                                            })
+                                        : t('Official area unavailable for {{country}}; using map polygon.', {
+                                            country: secondary.label,
+                                        })}
+                                </p>
+                            )}
+                        </div>
+                    </motion.div>
+
+                    <motion.div
+                        className="country-compare-ranking"
+                        initial={{ y: 16, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        transition={{ duration: 0.6, delay: 0.2 }}
+                    >
+                        <div className="ranking-header">
+                            <div className="map-title">
+                                <h2>{t('World area ranking')}</h2>
+                                <p>{t('Ranks use official total area.')}</p>
+                            </div>
+                            <button
+                                type="button"
+                                className="ranking-toggle"
+                                onClick={() => setShowAllRanks((prev) => !prev)}
+                            >
+                                {showAllRanks ? t('Show top 20') : t('Show all')}
+                            </button>
+                        </div>
+                        <div className="ranking-list">
+                            {rankingList.map((country, index) => {
+                                const rank = rankById.get(country.id) ?? index + 1;
+                                const isPrimary = primary?.id === country.id;
+                                const isSecondary = secondary?.id === country.id;
+                                return (
+                                    <div
+                                        key={country.id}
+                                        className={`ranking-row${isPrimary ? ' primary' : ''}${isSecondary ? ' secondary' : ''}`}
+                                    >
+                                        <span className="ranking-index mono">#{rank}</span>
+                                        <span className="ranking-name">{country.label}</span>
+                                        <span className="ranking-area mono">
+                                            {formatArea(country.rankingAreaKm2, i18n.language)} {t('km^2')}
+                                        </span>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </motion.div>
                 </>
             )}
