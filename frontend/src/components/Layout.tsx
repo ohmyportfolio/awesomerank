@@ -253,7 +253,9 @@ export const Layout = ({ children, showBack, showHome, onBack, onHome, currentAp
             </header>
 
             <main className="layout-main">
-                {children}
+                <div className="layout-content">
+                    {children}
+                </div>
             </main>
 
             <footer className="layout-footer">

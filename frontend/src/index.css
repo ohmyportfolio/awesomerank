@@ -281,8 +281,6 @@ input, select, textarea {
 /* === Root Container === */
 #root {
   width: 100%;
-  max-width: 600px;
-  margin: 0 auto;
   min-height: 100vh;
   min-height: 100dvh;
   display: flex;
