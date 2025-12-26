@@ -375,5 +375,22 @@
   "Your Rights": "Your Rights",
   "Zoom in": "Zoom in",
   "Zoom level": "Zoom level",
-  "Zoom out": "Zoom out"
+  "Zoom out": "Zoom out",
+  "Your Position in Global Income Distribution": "Your Position in Global Income Distribution",
+  "You are here": "You are here",
+  "info_your_income_desc": "Your annual pre-tax income converted to USD. This is the amount you entered.",
+  "info_your_income_example": "If you earn $50,000/year, you're in the top 15% globally. To reach the top 1%, you'd need about $223,000/year.",
+  "info_top_earners_desc": "The number of people in the world who earn more than you. Out of 8 billion people on Earth.",
+  "info_top_earners_example": "If you're in the top 5%, about 400 million people earn more than you.",
+  "info_median_desc": "The global median income - half of the world earns more, half earns less. This is the 50th percentile.",
+  "info_median_example": "The global median (PPP-adjusted) is about $11,249/year. Most people in developed countries earn much more.",
+  "info_vs_median_desc": "How many times more you earn compared to the typical person globally.",
+  "info_vs_median_example": "If you earn $50,000 and the median is $11,249, you earn about 4.4× the median.",
+  "info_milestone_desc": "The additional income needed to reach the next percentile tier (Top 10%, Top 5%, Top 1%, etc.)",
+  "info_top10_desc": "To be in the top 10% of global earners, you need at least this annual income.",
+  "info_top10_example": "About 800 million people worldwide are in this group.",
+  "info_top1_desc": "To be in the top 1% of global earners, you need at least this annual income.",
+  "info_top1_example": "About 80 million people worldwide are in this group - roughly the population of Germany.",
+  "info_top01_desc": "To be in the top 0.1% of global earners, you need at least this annual income.",
+  "info_top01_example": "About 8 million people worldwide are in this group - roughly the population of Switzerland."
 }

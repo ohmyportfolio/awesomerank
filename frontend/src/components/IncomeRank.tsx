@@ -6,6 +6,8 @@ import { WORLD_INCOME_THRESHOLDS_USD, WORLD_INCOME_WID } from '../data/worldInco
 import { formatTopPercent, percentileFromIncome, topPercentFromIncome } from '../utils/incomeRank';
 import { getIncomeClass, getPovertyStatus, POVERTY_LINES, CONSUMER_CLASS } from '../data/incomeInsights';
 import { useConsent } from '../contexts/useConsent';
+import { IncomeChart } from './IncomeChart';
+import { InfoTooltip } from './InfoTooltip';
 import './IncomeRank.css';
 
 // World population constant (2024 estimate)
@@ -112,7 +114,7 @@ export function IncomeRank() {
   const [submittedIncome, setSubmittedIncome] = useState<number | null>(urlParams.income);
   const [isCalculating, setIsCalculating] = useState(false);
   const [showCopied, setShowCopied] = useState(false);
-  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'skipped' | 'error'>('idle');
+  const [, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'skipped' | 'error'>('idle');
   const resultRef = useRef<HTMLDivElement>(null);
   const initialLoadRef = useRef(true);
   const startedAtRef = useRef<number>(Date.now());
@@ -559,17 +561,6 @@ export function IncomeRank() {
                       </span>
                       <span className="result-meta-dot">•</span>
                       <span className="result-meta">{basisLabel}</span>
-                      {saveState !== 'idle' && (
-                        <>
-                          <span className="result-meta-dot">•</span>
-                          <span className={`result-meta result-save ${saveState}`}>
-                            {saveState === 'saving' ? t('Saving…') :
-                              saveState === 'saved' ? t('Saved') :
-                                saveState === 'skipped' ? t('Not saved') :
-                                  t('Save failed')}
-                          </span>
-                        </>
-                      )}
                     </p>
                     {oneInPeople !== null && peopleInGroup !== null && (
                       <p className="result-meaning">
@@ -652,9 +643,27 @@ export function IncomeRank() {
                   </motion.div>
                 )}
 
+                {/* Income Distribution Chart */}
+                {dailyIncome && highlight.median && highlight.top10 && highlight.top1 && (
+                  <IncomeChart
+                    percentile={topPercent ?? 50}
+                    dailyIncome={dailyIncome}
+                    medianIncome={highlight.median}
+                    top10Threshold={highlight.top10}
+                    top1Threshold={highlight.top1}
+                  />
+                )}
+
                 <div className="result-details">
                   <div className="detail-card">
-                    <div className="detail-label">{t('Your income')}</div>
+                    <div className="detail-label">
+                      {t('Your income')}
+                      <InfoTooltip
+                        title={t('Your income')}
+                        description={t('info_your_income_desc')}
+                        example={t('info_your_income_example')}
+                      />
+                    </div>
                     <div className="detail-value mono">
                       {submittedIncome ? usd.format(submittedIncome) : '—'}
                     </div>
@@ -662,7 +671,14 @@ export function IncomeRank() {
                   </div>
 
                   <div className="detail-card">
-                    <div className="detail-label">{t('Top earners (out of 8 billion)')}</div>
+                    <div className="detail-label">
+                      {t('Top earners (out of 8 billion)')}
+                      <InfoTooltip
+                        title={t('Top earners (out of 8 billion)')}
+                        description={t('info_top_earners_desc')}
+                        example={t('info_top_earners_example')}
+                      />
+                    </div>
                     <div className="detail-value">
                       {topPeople ? topPeople.toLocaleString(i18n.language) : '—'}
                     </div>
@@ -670,7 +686,14 @@ export function IncomeRank() {
                   </div>
 
                   <div className="detail-card">
-                    <div className="detail-label">{t('Median (50th)')}</div>
+                    <div className="detail-label">
+                      {t('Median (50th)')}
+                      <InfoTooltip
+                        title={t('Global Median')}
+                        description={t('info_median_desc')}
+                        example={t('info_median_example')}
+                      />
+                    </div>
                     <div className="detail-value mono">
                       {highlight.median ? usd.format(highlight.median) : '—'}
                     </div>
@@ -678,7 +701,14 @@ export function IncomeRank() {
                   </div>
 
                   <div className="detail-card">
-                    <div className="detail-label">{t('Your income vs median')}</div>
+                    <div className="detail-label">
+                      {t('Your income vs median')}
+                      <InfoTooltip
+                        title={t('Your income vs median')}
+                        description={t('info_vs_median_desc')}
+                        example={t('info_vs_median_example')}
+                      />
+                    </div>
                     <div className="detail-value">
                       {medianMultiple ? `${medianMultiple.toLocaleString(i18n.language, { maximumFractionDigits: medianMultiple < 10 ? 2 : 1 })}×` : '—'}
                     </div>
@@ -686,7 +716,13 @@ export function IncomeRank() {
                   </div>
 
                   <div className="detail-card">
-                    <div className="detail-label">{t('Next milestone')}</div>
+                    <div className="detail-label">
+                      {t('Next milestone')}
+                      <InfoTooltip
+                        title={t('Next milestone')}
+                        description={t('info_milestone_desc')}
+                      />
+                    </div>
                     <div className="detail-value mono">
                       {nextMilestone
                         ? nextMilestone.delta > 0 ? `+${usd.format(nextMilestone.delta)}` : '✓'
@@ -702,7 +738,14 @@ export function IncomeRank() {
                   </div>
 
                   <div className="detail-card">
-                    <div className="detail-label">{t('Top 10% starts at')}</div>
+                    <div className="detail-label">
+                      {t('Top 10% starts at')}
+                      <InfoTooltip
+                        title={t('Top 10%')}
+                        description={t('info_top10_desc')}
+                        example={t('info_top10_example')}
+                      />
+                    </div>
                     <div className="detail-value mono">
                       {highlight.top10 ? usd.format(highlight.top10) : '—'}
                     </div>
@@ -710,7 +753,14 @@ export function IncomeRank() {
                   </div>
 
                   <div className="detail-card">
-                    <div className="detail-label">{t('Top 1% starts at')}</div>
+                    <div className="detail-label">
+                      {t('Top 1% starts at')}
+                      <InfoTooltip
+                        title={t('Top 1%')}
+                        description={t('info_top1_desc')}
+                        example={t('info_top1_example')}
+                      />
+                    </div>
                     <div className="detail-value mono">
                       {highlight.top1 ? usd.format(highlight.top1) : '—'}
                     </div>
@@ -718,7 +768,14 @@ export function IncomeRank() {
                   </div>
 
                   <div className="detail-card">
-                    <div className="detail-label">{t('Top 0.1% starts at')}</div>
+                    <div className="detail-label">
+                      {t('Top 0.1% starts at')}
+                      <InfoTooltip
+                        title={t('Top 0.1%')}
+                        description={t('info_top01_desc')}
+                        example={t('info_top01_example')}
+                      />
+                    </div>
                     <div className="detail-value mono">
                       {highlight.top01 ? usd.format(highlight.top01) : '—'}
                     </div>
