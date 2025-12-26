@@ -19,6 +19,11 @@ type CountryEntry = {
 const EARTH_RADIUS_KM = 6371;
 const VIEWBOX_WIDTH = 900;
 const VIEWBOX_HEIGHT = 600;
+const MIN_ZOOM = 0.6;
+const MAX_ZOOM = 2.6;
+const ZOOM_STEP = 0.05;
+
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
 const NAME_KEY_BY_LANGUAGE: Record<string, string> = {
     ar: 'NAME_AR',
@@ -67,6 +72,7 @@ export const CountrySizeCompare = () => {
     const [error, setError] = useState(false);
     const [primaryId, setPrimaryId] = useState<string>('');
     const [secondaryId, setSecondaryId] = useState<string>('');
+    const [zoom, setZoom] = useState(1);
 
     useEffect(() => {
         let mounted = true;
@@ -125,6 +131,21 @@ export const CountrySizeCompare = () => {
     const primary = countries.find((country) => country.id === primaryId) ?? null;
     const secondary = countries.find((country) => country.id === secondaryId) ?? null;
 
+    const autoZoom = useMemo(() => {
+        if (!primary || !secondary) return 1;
+        const biggerArea = Math.max(primary.areaKm2, secondary.areaKm2);
+        const smallerArea = Math.max(1, Math.min(primary.areaKm2, secondary.areaKm2));
+        const areaRatio = biggerArea / smallerArea;
+        const sizeRatio = Math.sqrt(areaRatio);
+        const boost = Math.log10(sizeRatio) * 0.6;
+        return clamp(1 + boost, 0.9, 2.2);
+    }, [primary, secondary]);
+
+    useEffect(() => {
+        if (!primary || !secondary) return;
+        setZoom(autoZoom);
+    }, [autoZoom, primary, secondary]);
+
     const overlay = useMemo(() => {
         if (!primary || !secondary) return null;
 
@@ -146,6 +167,7 @@ export const CountrySizeCompare = () => {
         const maxWidth = Math.max(primaryWidth, secondaryWidth, 1);
         const maxHeight = Math.max(primaryHeight, secondaryHeight, 1);
         const scale = Math.min((VIEWBOX_WIDTH * 0.82) / maxWidth, (VIEWBOX_HEIGHT * 0.82) / maxHeight);
+        const scaled = scale * zoom;
 
         const primaryCenter = [
             (primaryBounds[0][0] + primaryBounds[1][0]) / 2,
@@ -156,7 +178,7 @@ export const CountrySizeCompare = () => {
             (secondaryBounds[0][1] + secondaryBounds[1][1]) / 2,
         ];
 
-        const baseTranslate = `translate(${VIEWBOX_WIDTH / 2}, ${VIEWBOX_HEIGHT / 2}) scale(${scale})`;
+        const baseTranslate = `translate(${VIEWBOX_WIDTH / 2}, ${VIEWBOX_HEIGHT / 2}) scale(${scaled})`;
 
         return {
             primaryPath,
@@ -164,7 +186,7 @@ export const CountrySizeCompare = () => {
             primaryTransform: `${baseTranslate} translate(${-primaryCenter[0]}, ${-primaryCenter[1]})`,
             secondaryTransform: `${baseTranslate} translate(${-secondaryCenter[0]}, ${-secondaryCenter[1]})`,
         };
-    }, [primary, secondary]);
+    }, [primary, secondary, zoom]);
 
     const ratioData = useMemo(() => {
         if (!primary || !secondary) return null;
@@ -182,6 +204,10 @@ export const CountrySizeCompare = () => {
     const handleSwap = () => {
         setPrimaryId(secondaryId);
         setSecondaryId(primaryId);
+    };
+
+    const handleZoomChange = (value: number) => {
+        setZoom(clamp(value, MIN_ZOOM, MAX_ZOOM));
     };
 
     return (
@@ -305,19 +331,57 @@ export const CountrySizeCompare = () => {
                         transition={{ duration: 0.6 }}
                     >
                         <div className="map-header">
-                            <div>
+                            <div className="map-title">
                                 <h2>{t('Overlay view')}</h2>
                                 <p>{t('Equal-area projection keeps the size ratio precise.')}</p>
                             </div>
-                            <div className="map-legend">
-                                <span className="legend-item primary">
-                                    <span className="legend-dot" />
-                                    {primary.label}
-                                </span>
-                                <span className="legend-item secondary">
-                                    <span className="legend-dot" />
-                                    {secondary.label}
-                                </span>
+                            <div className="map-tools">
+                                <div className="map-legend">
+                                    <span className="legend-item primary">
+                                        <span className="legend-dot" />
+                                        {primary.label}
+                                    </span>
+                                    <span className="legend-item secondary">
+                                        <span className="legend-dot" />
+                                        {secondary.label}
+                                    </span>
+                                </div>
+                                <div className="map-controls">
+                                    <label htmlFor="overlay-zoom">{t('Zoom')}</label>
+                                    <div className="map-zoom">
+                                        <button
+                                            type="button"
+                                            className="zoom-button"
+                                            onClick={() => handleZoomChange(zoom - ZOOM_STEP)}
+                                            aria-label={t('Zoom out')}
+                                            disabled={zoom <= MIN_ZOOM + 0.001}
+                                        >
+                                            -
+                                        </button>
+                                        <input
+                                            id="overlay-zoom"
+                                            type="range"
+                                            min={MIN_ZOOM}
+                                            max={MAX_ZOOM}
+                                            step={ZOOM_STEP}
+                                            value={zoom}
+                                            onChange={(event) => handleZoomChange(Number(event.target.value))}
+                                            aria-label={t('Zoom')}
+                                        />
+                                        <button
+                                            type="button"
+                                            className="zoom-button"
+                                            onClick={() => handleZoomChange(zoom + ZOOM_STEP)}
+                                            aria-label={t('Zoom in')}
+                                            disabled={zoom >= MAX_ZOOM - 0.001}
+                                        >
+                                            +
+                                        </button>
+                                        <span className="map-zoom-readout mono">
+                                            {Math.round(zoom * 100)}%
+                                        </span>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                         <div className="map-stage">
