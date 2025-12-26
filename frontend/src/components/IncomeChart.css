@@ -1,7 +1,7 @@
 .income-chart {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   padding: 20px;
   margin: 20px 0;
   box-sizing: border-box;
@@ -34,10 +34,10 @@
   transform: translateX(-50%);
   font-size: 11px;
   font-weight: 600;
-  color: #ff6b35;
+  color: var(--accent-color);
   white-space: nowrap;
   padding: 4px 8px;
-  background: rgba(255, 107, 53, 0.15);
+  background: rgba(199, 109, 78, 0.15);
   border-radius: 4px;
 }
 
@@ -81,7 +81,7 @@
     #3b82f6 100%
   );
   border-radius: 6px;
-  box-shadow: 0 0 12px rgba(255, 107, 53, 0.4);
+  box-shadow: 0 0 12px rgba(199, 109, 78, 0.4);
 }
 
 .chart-bar-markers {
@@ -110,11 +110,11 @@
   top: 50%;
   width: 20px;
   height: 20px;
-  background: #ff6b35;
+  background: var(--accent-color);
   border: 3px solid #fff;
   border-radius: 50%;
   transform: translate(-50%, -50%);
-  box-shadow: 0 2px 8px rgba(255, 107, 53, 0.5);
+  box-shadow: 0 2px 8px rgba(199, 109, 78, 0.5);
   z-index: 10;
 }
 
@@ -130,7 +130,7 @@
   text-align: center;
   padding: 12px 8px;
   background: rgba(255, 255, 255, 0.04);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
 }
 
 .threshold-label {
@@ -246,7 +246,7 @@
   .income-chart {
     padding: 12px;
     margin: 16px 0;
-    border-radius: 12px;
+    border-radius: var(--radius-md);
   }
 
   .chart-title {

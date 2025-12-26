@@ -223,7 +223,7 @@
 }
 
 .btn-details:hover {
-    background: rgba(0, 240, 255, 0.1);
+    background: rgba(212, 165, 116, 0.1);
 }
 
 /* Details Modal */
@@ -247,7 +247,7 @@
 .details-modal {
     background: var(--surface-color);
     border: 1px solid var(--glass-border);
-    border-radius: 20px;
+    border-radius: var(--radius-xl);
     width: 100%;
     max-width: 500px;
     max-height: 80vh;
@@ -301,7 +301,7 @@
 .detail-item {
     background: var(--glass-bg);
     border: 1px solid var(--glass-border);
-    border-radius: 12px;
+    border-radius: var(--radius-md);
     padding: var(--space-md);
     margin-bottom: var(--space-md);
 }
@@ -329,15 +329,15 @@
     font-size: 0.75rem;
     font-weight: 700;
     padding: 0.25rem 0.75rem;
-    border-radius: 20px;
+    border-radius: var(--radius-xl);
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
 
 .detail-answer.yes {
-    background: rgba(0, 240, 255, 0.15);
+    background: rgba(212, 165, 116, 0.15);
     color: var(--primary-color);
-    border: 1px solid rgba(0, 240, 255, 0.3);
+    border: 1px solid rgba(212, 165, 116, 0.3);
 }
 
 .detail-answer.no {
@@ -415,7 +415,7 @@
 
     .details-modal {
         max-height: 85vh;
-        border-radius: 16px;
+        border-radius: var(--radius-lg);
     }
 
     .details-header {
