@@ -58,8 +58,11 @@ export const Result = ({ answers, sharedScore, onRestart }: ResultProps) => {
 
     const handleShare = async () => {
         // Build share URL with score parameter
-        const baseUrl = window.location.origin + window.location.pathname;
-        const shareUrl = `${baseUrl}?app=world-rank&score=${score}`;
+        const baseUrl = `${window.location.origin}/world-rank`;
+        const params = new URLSearchParams();
+        params.set('score', String(score));
+        params.set('lang', i18n.language);
+        const shareUrl = `${baseUrl}?${params.toString()}`;
 
         const shareData = {
             title: t('Awesome Rank'),

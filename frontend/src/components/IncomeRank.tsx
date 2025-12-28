@@ -748,9 +748,9 @@ export function IncomeRank() {
 
   const handleShare = async () => {
     // Build share URL with parameters
-    const baseUrl = window.location.origin + window.location.pathname;
+    const baseUrl = `${window.location.origin}/income-rank`;
     const params = new URLSearchParams();
-    params.set('app', 'income-rank');
+    params.set('lang', i18n.language);
     if (parsedLocalIncome !== null) params.set('householdIncome', String(parsedLocalIncome));
     if (parsedAdults !== null) params.set('adults', String(parsedAdults));
     if (parsedChildren !== null) params.set('children', String(parsedChildren));

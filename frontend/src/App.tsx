@@ -11,6 +11,7 @@ import { IncomeRank } from './components/IncomeRank';
 import { CountrySizeCompare } from './components/CountrySizeCompare';
 import { GlobalStats } from './components/GlobalStats/GlobalStats';
 import { AdminDashboard } from './components/AdminDashboard';
+import { PrivacyPolicy } from './components/PrivacyPolicy';
 import { ConsentBanner } from './components/ConsentBanner';
 import { ConsentProvider } from './contexts/ConsentContext';
 import { useConsent } from './contexts/useConsent';
@@ -93,6 +94,23 @@ async function submitQuizData(data: Record<string, unknown>) {
   }
 }
 
+type View =
+  | 'home'
+  | 'landing'
+  | 'demographics'
+  | 'quiz'
+  | 'result'
+  | 'income'
+  | 'admin'
+  | 'country-compare'
+  | 'global-stats'
+  | 'privacy';
+
+function normalizePath(pathname: string) {
+  if (pathname.length > 1 && pathname.endsWith('/')) return pathname.slice(0, -1);
+  return pathname;
+}
+
 // Get initial view and shared data from URL parameters
 function getUrlState() {
   const params = new URLSearchParams(window.location.search);
@@ -101,11 +119,21 @@ function getUrlState() {
   const income = params.get('income');
   const basis = params.get('basis');
 
-  let view: 'home' | 'landing' | 'demographics' | 'quiz' | 'result' | 'income' | 'admin' | 'country-compare' | 'global-stats' = 'home';
+  let view: View = 'home';
 
-  // Check for /admin path
-  if (window.location.pathname === '/admin') {
+  const path = normalizePath(window.location.pathname);
+  if (path === '/admin') {
     view = 'admin';
+  } else if (path === '/privacy') {
+    view = 'privacy';
+  } else if (path === '/income-rank') {
+    view = 'income';
+  } else if (path === '/country-compare') {
+    view = 'country-compare';
+  } else if (path === '/global-stats') {
+    view = 'global-stats';
+  } else if (path === '/world-rank') {
+    view = score ? 'result' : 'landing';
   } else if (app === 'income-rank') {
     view = 'income';
   } else if (app === 'country-compare') {
@@ -113,12 +141,7 @@ function getUrlState() {
   } else if (app === 'global-stats') {
     view = 'global-stats';
   } else if (app === 'world-rank') {
-    // If score is present, show result directly
-    if (score) {
-      view = 'result';
-    } else {
-      view = 'landing';
-    }
+    view = score ? 'result' : 'landing';
   }
 
   return {
@@ -133,42 +156,68 @@ function AppContent() {
   const { i18n } = useTranslation();
   const { canCollectData } = useConsent();
   const urlState = getUrlState();
-  const [view, setView] = useState<'home' | 'landing' | 'demographics' | 'quiz' | 'result' | 'income' | 'admin' | 'country-compare' | 'global-stats'>(urlState.view);
+  const [view, setView] = useState<View>(urlState.view);
   const [answers, setAnswers] = useState<boolean[]>([]);
   const [demographics, setDemographics] = useState<DemographicsData | null>(null);
-  const [sharedScore] = useState<number | undefined>(urlState.sharedScore);
+  const [sharedScore, setSharedScore] = useState<number | undefined>(urlState.sharedScore);
   const startTimeRef = useRef<number>(0);
   const attributionRef = useRef(getAttributionData());
+
+  const getLangParam = () => {
+    const urlLang = new URLSearchParams(window.location.search).get('lang');
+    if (urlLang) return urlLang;
+    return i18n.language !== 'en' ? i18n.language : null;
+  };
+
+  const withLang = (path: string) => {
+    const lang = getLangParam();
+    return lang ? `${path}?lang=${lang}` : path;
+  };
 
   // Track session start
   useEffect(() => {
     startTimeRef.current = Date.now();
   }, []);
 
-  const handleSelectApp = (appId: string) => {
-    if (appId === 'world-rank') {
-      setView('landing');
-    } else if (appId === 'income-rank') {
-      setView('income');
-    } else if (appId === 'country-compare') {
-      setView('country-compare');
-    } else if (appId === 'global-stats') {
-      setView('global-stats');
+  useEffect(() => {
+    document.documentElement.lang = i18n.language || 'en';
+  }, [i18n.language]);
+
+  const navigate = (nextView: View, path?: string) => {
+    if (path) {
+      window.history.pushState({}, '', path);
+    }
+    setView(nextView);
+    if (nextView !== 'result') {
+      setSharedScore(undefined);
     }
   };
 
-  const goHome = () => setView('home');
-  const goBack = () => {
-    if (view === 'landing') setView('home');
-    else if (view === 'income') setView('home');
-    else if (view === 'country-compare') setView('home');
-    else if (view === 'global-stats') setView('home');
-    else if (view === 'demographics') setView('landing');
-    else if (view === 'quiz') setView('demographics');
-    else if (view === 'result') setView('home');
+  const handleSelectApp = (appId: string) => {
+    if (appId === 'world-rank') {
+      navigate('landing', withLang('/world-rank'));
+    } else if (appId === 'income-rank') {
+      navigate('income', withLang('/income-rank'));
+    } else if (appId === 'country-compare') {
+      navigate('country-compare', withLang('/country-compare'));
+    } else if (appId === 'global-stats') {
+      navigate('global-stats', withLang('/global-stats'));
+    }
   };
 
-  const startQuiz = () => setView('demographics');
+  const goHome = () => navigate('home', withLang('/'));
+  const goBack = () => {
+    if (view === 'landing') navigate('home', withLang('/'));
+    else if (view === 'income') navigate('home', withLang('/'));
+    else if (view === 'country-compare') navigate('home', withLang('/'));
+    else if (view === 'global-stats') navigate('home', withLang('/'));
+    else if (view === 'privacy') navigate('home', withLang('/'));
+    else if (view === 'demographics') navigate('landing', withLang('/world-rank'));
+    else if (view === 'quiz') navigate('demographics');
+    else if (view === 'result') navigate('home', withLang('/'));
+  };
+
+  const startQuiz = () => navigate('demographics');
 
   const handleDemographics = (data: DemographicsData) => {
     setDemographics(data);
@@ -239,11 +288,21 @@ function AppContent() {
     setAnswers([]);
     setDemographics(null);
     startTimeRef.current = Date.now();
-    setView('home');
+    navigate('home', withLang('/'));
   };
 
   const showBack = view !== 'home' && view !== 'admin';
   const showHome = view !== 'home' && view !== 'landing' && view !== 'income' && view !== 'global-stats' && view !== 'admin';
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const state = getUrlState();
+      setView(state.view);
+      setSharedScore(state.sharedScore);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // Map view to app id
   const currentApp = view === 'landing' || view === 'demographics' || view === 'quiz' || view === 'result'
@@ -279,6 +338,7 @@ function AppContent() {
         {view === 'demographics' && <Demographics onComplete={handleDemographics} key="demographics" />}
         {view === 'quiz' && <Quiz onFinish={finishQuiz} key="quiz" />}
         {view === 'result' && <Result answers={answers} sharedScore={sharedScore} onRestart={restart} key="result" />}
+        {view === 'privacy' && <PrivacyPolicy onClose={goHome} />}
       </AnimatePresence>
       <ConsentBanner />
     </Layout>

@@ -4,8 +4,9 @@ import { useConsent } from '../contexts/useConsent';
 import './ConsentBanner.css';
 
 export function ConsentBanner() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { consent, isConsentRequired, isOptInRegion, acceptConsent, rejectConsent } = useConsent();
+  const privacyHref = i18n.language ? `/privacy?lang=${i18n.language}` : '/privacy';
 
   // Don't show if consent already given
   if (!isConsentRequired) {
@@ -42,7 +43,7 @@ export function ConsentBanner() {
               <p className="consent-note">
                 {t('Collected data is used only for research and service improvement purposes. We do not sell or share your personal information with third parties.')}
               </p>
-              <a href="/privacy" className="consent-link" target="_blank" rel="noopener noreferrer">
+              <a href={privacyHref} className="consent-link" target="_blank" rel="noopener noreferrer">
                 {t('Read Privacy Policy')}
               </a>
             </div>

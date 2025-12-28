@@ -9,6 +9,7 @@ Sitemap: https://awesomerank.com/sitemap.xml
 
 # Disallow API endpoints
 Disallow: /api/
+Disallow: /admin
 
 # Allow all major search engine crawlers
 User-agent: Googlebot

@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "npm run sitemap:generate && tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "i18n:parse": "i18next --config i18next-parser.config.cjs"
+    "i18n:parse": "i18next --config i18next-parser.config.cjs",
+    "sitemap:generate": "node ./scripts/generate-sitemap.mjs"
   },
   "dependencies": {
     "classnames": "^2.5.1",
