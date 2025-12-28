@@ -10,6 +10,7 @@ import { COUNTRY_CURRENCY, COUNTRY_CURRENCY_BY_CODE } from '../data/countryCurre
 import { useConsent } from '../contexts/useConsent';
 import { IncomeChart } from './IncomeChart';
 import { InfoTooltip } from './InfoTooltip';
+import { MatomoEvents } from '../utils/matomo';
 import './IncomeRank.css';
 
 // World population constant (2024 estimate)
@@ -670,6 +671,7 @@ export function IncomeRank() {
   const handleCheck = () => {
     if (convertedIncomeUsd === null) return;
 
+    MatomoEvents.incomeCalculated(basis);
     setIsCalculating(true);
     setSaveState('idle');
     setSubmittedIncome(null);

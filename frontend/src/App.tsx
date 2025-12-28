@@ -18,6 +18,7 @@ import { useConsent } from './contexts/useConsent';
 import { AnimatePresence } from 'framer-motion';
 import { calculateScore, SCORE_ALGO_VERSION } from './utils/scoreCalculator';
 import { QUESTION_IDS, QUESTION_SET_ID } from './data/questions';
+import { trackPageView, MatomoEvents, PageTitles } from './utils/matomo';
 
 const APP_ID = 'world-rank';
 const QUIZ_VERSION = 'v1';
@@ -191,9 +192,12 @@ function AppContent() {
     if (nextView !== 'result') {
       setSharedScore(undefined);
     }
+    // Track page view
+    trackPageView(path || `/${nextView}`, PageTitles[nextView]);
   };
 
   const handleSelectApp = (appId: string) => {
+    MatomoEvents.appSelected(appId);
     if (appId === 'world-rank') {
       navigate('landing', withLang('/world-rank'));
     } else if (appId === 'income-rank') {
@@ -217,11 +221,16 @@ function AppContent() {
     else if (view === 'result') navigate('home', withLang('/'));
   };
 
-  const startQuiz = () => navigate('demographics');
+  const startQuiz = () => {
+    MatomoEvents.quizStarted();
+    navigate('demographics');
+  };
 
   const handleDemographics = (data: DemographicsData) => {
     setDemographics(data);
     setView('quiz');
+    MatomoEvents.demographicsCompleted();
+    trackPageView('/quiz', PageTitles.quiz);
   };
 
   const finishQuiz = (finalAnswers: boolean[], times: number[]) => {
@@ -230,6 +239,10 @@ function AppContent() {
 
     // Calculate score
     const scoreResult = calculateScore(finalAnswers);
+
+    // Track quiz completion
+    MatomoEvents.quizCompleted(scoreResult.score);
+    trackPageView('/result', PageTitles.result);
 
     // Submit all collected data
     const sessionDuration = Date.now() - startTimeRef.current;

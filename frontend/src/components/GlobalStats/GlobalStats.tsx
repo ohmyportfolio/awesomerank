@@ -6,6 +6,7 @@ import { GlobalStatsResult, type GlobalStatsResults } from './GlobalStatsResult'
 import { calculateHeightPercentile, type Gender } from '../../data/heightDistribution';
 import { calculateAgePercentile, calculateAge, WORLD_POPULATION } from '../../data/ageDistribution';
 import { calculateBirthdayPercentile } from '../../data/birthDateStats';
+import { MatomoEvents } from '../../utils/matomo';
 import './GlobalStats.css';
 
 export const GlobalStats = () => {
@@ -16,6 +17,7 @@ export const GlobalStats = () => {
 
   const handleSubmit = (data: GlobalStatsInputData) => {
     setInputData(data);
+    MatomoEvents.globalStatsViewed('calculated');
 
     // Calculate height percentile
     const heightResult = calculateHeightPercentile(

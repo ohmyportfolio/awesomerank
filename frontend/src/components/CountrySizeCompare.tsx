@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { geoArea, geoEqualEarth, geoPath } from 'd3-geo';
 import officialAreaByIso3 from '../data/officialAreaByIso3';
+import { MatomoEvents } from '../utils/matomo';
 import './CountrySizeCompare.css';
 
 type CountryProperties = Record<string, string | number | null>;
@@ -346,6 +347,9 @@ export const CountrySizeCompare = () => {
     }, [primary, secondary]);
 
     const handleSwap = () => {
+        if (primary && secondary) {
+            MatomoEvents.countryCompared(secondary.iso3, primary.iso3);
+        }
         setPrimaryId(secondaryId);
         setSecondaryId(primaryId);
     };
@@ -890,7 +894,10 @@ export const CountrySizeCompare = () => {
                                 <button
                                     type="button"
                                     className="expand-btn"
-                                    onClick={() => setIsFullscreen(true)}
+                                    onClick={() => {
+                                        MatomoEvents.countryCompareFullscreen();
+                                        setIsFullscreen(true);
+                                    }}
                                     aria-label={t('Full screen')}
                                 >
                                     ⛶
