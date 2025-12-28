@@ -80,6 +80,7 @@
 .intro-card {
     border-radius: var(--radius-xl);
     padding: 1.2rem 1.25rem;
+    margin-bottom: 1.5rem;
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid var(--glass-border);
     display: grid;
@@ -113,11 +114,16 @@
 
 .intro-actions {
     display: flex;
-    justify-content: flex-start;
+    margin-top: 0.25rem;
 }
 
 .intro-btn {
-    width: auto;
+    width: 100%;
+    padding: 1.25rem 1.5rem;
+    min-height: 60px;
+    font-size: var(--text-xl);
+    font-weight: 900;
+    letter-spacing: 0.08em;
 }
 
 .income-row {

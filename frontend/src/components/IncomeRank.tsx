@@ -849,7 +849,7 @@ export function IncomeRank() {
                   className="income-check-btn intro-btn"
                   onClick={() => setShowIntro(false)}
                 >
-                  {t('Continue to income input')}
+                  {t('Get Started')}
                 </button>
               </div>
             </div>
