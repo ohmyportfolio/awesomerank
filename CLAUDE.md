@@ -20,7 +20,7 @@ world-rank/
 ├── frontend/          # React + Vite + TypeScript
 │   ├── src/
 │   │   ├── components/
-│   │   ├── locales/   # Translation files (14 languages)
+│   │   ├── locales/   # Translation files (see i18n.ts for supported languages)
 │   │   └── i18n.ts
 │   └── package.json
 ├── server/            # Express + SQLite backend
