@@ -325,8 +325,16 @@
 
 .map-toolbar {
     display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+}
+
+.toolbar-row {
+    display: flex;
     align-items: center;
     gap: 0.75rem;
+    width: 100%;
 }
 
 .toolbar-group {
@@ -377,7 +385,7 @@
 }
 
 .map-zoom-compact .zoom-slider {
-    width: 80px;
+    width: 160px;
     appearance: none;
     height: 4px;
     border-radius: var(--radius-full);
@@ -958,7 +966,7 @@ body.cc-fullscreen-lock {
 }
 
 .fullscreen-zoom .zoom-slider {
-    width: 100px;
+    width: 200px;
     appearance: none;
     height: 5px;
     border-radius: var(--radius-full);
@@ -1203,7 +1211,23 @@ body.cc-fullscreen-lock {
 
     .map-toolbar {
         width: 100%;
-        justify-content: space-between;
+    }
+
+    .toolbar-row {
+        flex-wrap: wrap;
+    }
+
+    .map-zoom-compact .zoom-slider {
+        width: 120px;
+    }
+
+    .fullscreen-zoom .zoom-slider {
+        width: 140px;
+    }
+
+    .fullscreen-tools {
+        flex-direction: column;
+        gap: 0.5rem;
     }
 
     .map-tools {
@@ -1295,7 +1319,7 @@ body.cc-fullscreen-lock {
     }
 
     .fullscreen-zoom .zoom-slider {
-        width: 60px;
+        width: 100px;
     }
 
     .fullscreen-move-toggle {
@@ -1304,7 +1328,7 @@ body.cc-fullscreen-lock {
 
     .fullscreen-move-toggle button {
         padding: 0.3rem 0.5rem;
-        max-width: 100px;
+        max-width: 80px;
     }
 
     .fullscreen-legend {

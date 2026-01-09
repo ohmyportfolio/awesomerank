@@ -26,7 +26,7 @@ const VIEWBOX_WIDTH = 900;
 const VIEWBOX_HEIGHT = 600;
 const MIN_ZOOM = 0.6;
 const MAX_ZOOM = 40;
-const ZOOM_STEP = 0.05;
+const ZOOM_STEP = 0.1;
 const RANKING_LIMIT = 20;
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
@@ -346,14 +346,6 @@ export const CountrySizeCompare = () => {
         };
     }, [primary, secondary]);
 
-    const handleSwap = () => {
-        if (primary && secondary) {
-            MatomoEvents.countryCompared(secondary.iso3, primary.iso3);
-        }
-        setPrimaryId(secondaryId);
-        setSecondaryId(primaryId);
-    };
-
     const handleZoomChange = (value: number) => {
         const nextZoom = clamp(value, MIN_ZOOM, MAX_ZOOM);
         if (nextZoom === zoom) return;
@@ -578,16 +570,6 @@ export const CountrySizeCompare = () => {
                     </select>
                 </div>
 
-                <button
-                    className="country-compare-swap"
-                    type="button"
-                    onClick={handleSwap}
-                    aria-label={t('Swap countries')}
-                >
-                    <span className="swap-icon">{'<>'}</span>
-                    <span>{t('Swap')}</span>
-                </button>
-
                 <div className="country-compare-select">
                     <label htmlFor="country-secondary">{t('Country B')}</label>
                     <select
@@ -738,14 +720,6 @@ export const CountrySizeCompare = () => {
                                             </option>
                                         ))}
                                     </select>
-                                    <button
-                                        className="fullscreen-swap"
-                                        type="button"
-                                        onClick={handleSwap}
-                                        aria-label={t('Swap countries')}
-                                    >
-                                        ⇄
-                                    </button>
                                     <select
                                         id="country-secondary-full"
                                         value={secondaryId}
@@ -841,7 +815,7 @@ export const CountrySizeCompare = () => {
                                 </div>
                             </div>
                             <div className="map-toolbar">
-                                <div className="toolbar-group">
+                                <div className="toolbar-row">
                                     <div className="map-zoom-compact">
                                         <button
                                             type="button"
@@ -871,6 +845,8 @@ export const CountrySizeCompare = () => {
                                             +
                                         </button>
                                     </div>
+                                </div>
+                                <div className="toolbar-row">
                                     <div className="map-move-compact" role="group">
                                         <button
                                             type="button"
@@ -897,18 +873,18 @@ export const CountrySizeCompare = () => {
                                             B
                                         </button>
                                     </div>
+                                    <button
+                                        type="button"
+                                        className="expand-btn"
+                                        onClick={() => {
+                                            MatomoEvents.countryCompareFullscreen();
+                                            setIsFullscreen(true);
+                                        }}
+                                        aria-label={t('Full screen')}
+                                    >
+                                        ⛶
+                                    </button>
                                 </div>
-                                <button
-                                    type="button"
-                                    className="expand-btn"
-                                    onClick={() => {
-                                        MatomoEvents.countryCompareFullscreen();
-                                        setIsFullscreen(true);
-                                    }}
-                                    aria-label={t('Full screen')}
-                                >
-                                    ⛶
-                                </button>
                             </div>
                         </div>
                         <div className={`map-stage${isDragging ? ' dragging' : ''}`}>
