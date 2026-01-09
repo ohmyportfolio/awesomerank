@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
+import { Helmet } from 'react-helmet-async';
 import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { geoArea, geoEqualEarth, geoPath } from 'd3-geo';
@@ -529,13 +530,20 @@ export const CountrySizeCompare = () => {
     const rankingList = showAllRanks ? rankedCountries : rankedCountries.slice(0, RANKING_LIMIT);
 
     return (
-        <motion.section
-            className="country-compare"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.4 }}
-        >
+        <>
+            <Helmet>
+                <title>{t('True Size Atlas - Compare Country Sizes')} | Awesome Rank</title>
+                <meta name="description" content={t('Compare the real sizes of countries on an equal-area map. See how big countries really are when placed at the same latitude.')} />
+                <meta property="og:title" content={`${t('True Size Atlas')} | Awesome Rank`} />
+                <meta property="og:description" content={t('Compare the real sizes of countries on an equal-area map.')} />
+            </Helmet>
+            <motion.section
+                className="country-compare"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.4 }}
+            >
             <div className="country-compare-hero">
                 <motion.div
                     className="country-compare-title"
@@ -1046,5 +1054,6 @@ export const CountrySizeCompare = () => {
                 </>
             )}
         </motion.section>
+        </>
     );
 };

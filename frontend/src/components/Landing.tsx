@@ -1,3 +1,4 @@
+import { Helmet } from 'react-helmet-async';
 import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import './Landing.css';
@@ -9,7 +10,14 @@ interface LandingProps {
 export const Landing = ({ onStart }: LandingProps) => {
     const { t } = useTranslation();
     return (
-        <motion.div
+        <>
+            <Helmet>
+                <title>{t('World Rank - Where Do You Stand?')} | Awesome Rank</title>
+                <meta name="description" content={t('Take the quiz to discover your global ranking among 8 billion people. Find out where you stand in the world.')} />
+                <meta property="og:title" content={`${t('World Rank')} | Awesome Rank`} />
+                <meta property="og:description" content={t('Where do you stand among 8 billion people?')} />
+            </Helmet>
+            <motion.div
             className="landing-container"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -49,5 +57,6 @@ export const Landing = ({ onStart }: LandingProps) => {
 
             <div className="decor-circle"></div>
         </motion.div>
+        </>
     );
 };

@@ -1,4 +1,5 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
+import { Helmet } from 'react-helmet-async';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import type { IncomeBasis } from '../data/worldIncomeThresholds';
@@ -801,13 +802,20 @@ export function IncomeRank() {
   void WORLD_INCOME_WID.sourceFileByBasis[basis];
 
   return (
-    <motion.div
-      className="income-rank"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0, y: -10 }}
-      transition={{ duration: 0.5 }}
-    >
+    <>
+      <Helmet>
+        <title>{t('Income Rank - Global Living Standard Calculator')} | Awesome Rank</title>
+        <meta name="description" content={t('Calculate your global income ranking. See where your living standard stands among 8 billion people worldwide.')} />
+        <meta property="og:title" content={`${t('Income Rank')} | Awesome Rank`} />
+        <meta property="og:description" content={t('What percent of the world is your living standard?')} />
+      </Helmet>
+      <motion.div
+        className="income-rank"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0, y: -10 }}
+        transition={{ duration: 0.5 }}
+      >
       <motion.div
         className="income-rank-card"
         initial={{ y: 24, opacity: 0 }}
@@ -1455,5 +1463,6 @@ export function IncomeRank() {
         </motion.div>
       </motion.div>
     </motion.div>
+    </>
   );
 }

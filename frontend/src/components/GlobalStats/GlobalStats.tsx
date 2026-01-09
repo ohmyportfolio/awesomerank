@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Helmet } from 'react-helmet-async';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GlobalStatsInput, type GlobalStatsInputData } from './GlobalStatsInput';
@@ -71,12 +72,19 @@ export const GlobalStats = () => {
   };
 
   return (
-    <motion.section
-      className="global-stats"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-    >
+    <>
+      <Helmet>
+        <title>{t('Global Profile - Height, Age & Birthday Stats')} | Awesome Rank</title>
+        <meta name="description" content={t('Discover where you stand among 8 billion people. Compare your height, age, and birthday with global statistics.')} />
+        <meta property="og:title" content={`${t('Global Profile')} | Awesome Rank`} />
+        <meta property="og:description" content={t('Compare your height, age, and birthday with global statistics.')} />
+      </Helmet>
+      <motion.section
+        className="global-stats"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+      >
       <div className="global-stats-container">
         <AnimatePresence mode="wait">
           {view === 'input' && (
@@ -108,5 +116,6 @@ export const GlobalStats = () => {
         </AnimatePresence>
       </div>
     </motion.section>
+    </>
   );
 };

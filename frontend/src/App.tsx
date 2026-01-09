@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { HelmetProvider } from 'react-helmet-async';
 import { Layout } from './components/Layout';
 import { AppSelector } from './components/AppSelector';
 import { Landing } from './components/Landing';
@@ -360,9 +361,11 @@ function AppContent() {
 
 function App() {
   return (
-    <ConsentProvider>
-      <AppContent />
-    </ConsentProvider>
+    <HelmetProvider>
+      <ConsentProvider>
+        <AppContent />
+      </ConsentProvider>
+    </HelmetProvider>
   );
 }
 
