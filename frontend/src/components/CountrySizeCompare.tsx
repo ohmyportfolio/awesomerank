@@ -355,7 +355,14 @@ export const CountrySizeCompare = () => {
     };
 
     const handleZoomChange = (value: number) => {
-        setZoom(clamp(value, MIN_ZOOM, MAX_ZOOM));
+        const nextZoom = clamp(value, MIN_ZOOM, MAX_ZOOM);
+        if (nextZoom === zoom) return;
+        const ratio = zoom ? nextZoom / zoom : 1;
+        setPan((prev) => ({
+            x: prev.x * ratio,
+            y: prev.y * ratio,
+        }));
+        setZoom(nextZoom);
     };
 
     const handlePointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {

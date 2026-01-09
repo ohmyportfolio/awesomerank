@@ -235,6 +235,23 @@
 
 }
 
+.product-hunt-badge {
+    margin-top: clamp(1.5rem, 5vw, 2.5rem);
+    display: block;
+    opacity: 0.85;
+    transition: opacity var(--transition-base), transform var(--transition-base);
+}
+
+.product-hunt-badge:hover {
+    opacity: 1;
+    transform: translateY(-2px);
+}
+
+.product-hunt-badge img {
+    width: clamp(180px, 50vw, 250px);
+    height: auto;
+}
+
 /* Responsive: Small phones */
 @media (max-width: 320px) {
     .app-selector-container {

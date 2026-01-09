@@ -101,6 +101,23 @@ export const AppSelector = ({ onSelectApp }: AppSelectorProps) => {
                     </motion.button>
                 ))}
             </motion.div>
+
+            <motion.a
+                href="https://www.producthunt.com/products/awesome-rank?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-awesome-rank"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="product-hunt-badge"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 1.0, duration: 0.6 }}
+            >
+                <img
+                    src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1058946&theme=dark&t=1767938588539"
+                    alt="Awesome Rank - Discover where you stand among 8 billion people | Product Hunt"
+                    width="250"
+                    height="54"
+                />
+            </motion.a>
         </motion.div>
     );
 };
