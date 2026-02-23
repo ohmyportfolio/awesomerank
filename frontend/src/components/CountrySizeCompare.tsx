@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { motion } from 'framer-motion';
@@ -6,23 +6,12 @@ import { useTranslation } from 'react-i18next';
 import { geoArea, geoEqualEarth, geoPath } from 'd3-geo';
 import officialAreaByIso3 from '../data/officialAreaByIso3';
 import { MatomoEvents } from '../utils/matomo';
+import type { CompareEntry, CompareMode, CountryFeature, GeoCollection, SelectedEntry } from './compare/types';
+import { ENTITY_COLORS, MAX_SELECTED_ENTITIES } from './compare/types';
+import { EARTH_RADIUS_KM, buildContinentEntries, buildSubregionEntries, buildAdmin1Entries, unionBounds } from './compare/geoUtils';
+import { CompareSearchInput } from './compare/CompareSearchInput';
 import './CountrySizeCompare.css';
 
-type CountryProperties = Record<string, string | number | null>;
-type CountryFeature = GeoJSON.Feature<GeoJSON.Geometry, CountryProperties>;
-type GeoCollection = GeoJSON.FeatureCollection<GeoJSON.Geometry, CountryProperties>;
-
-type CountryEntry = {
-    id: string;
-    iso3: string;
-    label: string;
-    name: string;
-    areaKm2: number;
-    officialAreaKm2: number | null;
-    feature: CountryFeature;
-};
-
-const EARTH_RADIUS_KM = 6371;
 const VIEWBOX_WIDTH = 900;
 const VIEWBOX_HEIGHT = 600;
 const MIN_ZOOM = 0.6;
@@ -51,38 +40,48 @@ const getLocalizedName = (properties: CountryFeature['properties'], language: st
 const formatArea = (value: number, locale: string) =>
     new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(value);
 
-const formatRatio = (value: number, locale: string) =>
-    new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(value);
+/* ─── Overlay entity shape produced by the geometry memo ─── */
+type EntityGeo = {
+    id: string;
+    paths: string[];
+    bounds: [[number, number], [number, number]];
+    center: [number, number];
+    colorIndex: number;
+};
 
 export const CountrySizeCompare = () => {
     const { t, i18n } = useTranslation();
+
+    /* ─── Data loading state ─── */
     const [features, setFeatures] = useState<CountryFeature[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
-    const [primaryId, setPrimaryId] = useState<string>('');
-    const [secondaryId, setSecondaryId] = useState<string>('');
+    const [admin1Features, setAdmin1Features] = useState<CountryFeature[] | null>(null);
+    const [admin1Loading, setAdmin1Loading] = useState(false);
+    const [admin1Requested, setAdmin1Requested] = useState(false);
+
+    /* ─── Selection & interaction state ─── */
+    const [selectedEntries, setSelectedEntries] = useState<SelectedEntry[]>([]);
+    const [entityOffsets, setEntityOffsets] = useState<Map<string, { x: number; y: number }>>(new Map());
+    const [dragTarget, setDragTarget] = useState<string>('__pan__'); // '__pan__' or entity id
     const [zoom, setZoom] = useState(1);
     const [pan, setPan] = useState({ x: 0, y: 0 });
-    const [primaryOffset, setPrimaryOffset] = useState({ x: 0, y: 0 });
-    const [secondaryOffset, setSecondaryOffset] = useState({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = useState(false);
-    const [dragTarget, setDragTarget] = useState<'both' | 'primary' | 'secondary'>('both');
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [resolution, setResolution] = useState<'110m' | '10m'>('110m');
     const [showAllRanks, setShowAllRanks] = useState(false);
     const [showOptions, setShowOptions] = useState(false);
+
+    /* ─── Refs ─── */
     const dragStateRef = useRef<{
         startX: number;
         startY: number;
         originPanX: number;
         originPanY: number;
-        originPrimaryX: number;
-        originPrimaryY: number;
-        originSecondaryX: number;
-        originSecondaryY: number;
+        entityId: string | null;
+        originEntityOffset: { x: number; y: number };
         scaleX: number;
         scaleY: number;
-        target: 'both' | 'primary' | 'secondary';
     } | null>(null);
     const pointerCacheRef = useRef(new Map<number, { x: number; y: number }>());
     const pinchStateRef = useRef<{
@@ -95,6 +94,11 @@ export const CountrySizeCompare = () => {
         scaleX: number;
         scaleY: number;
     } | null>(null);
+    const initializedRef = useRef(false);
+
+    /* ══════════════════════════════════════════════════════════
+       DATA LOADING
+    ══════════════════════════════════════════════════════════ */
 
     useEffect(() => {
         let mounted = true;
@@ -105,9 +109,7 @@ export const CountrySizeCompare = () => {
                 const response = await fetch(`/data/countries-${resolution}.geojson`);
                 if (!response.ok) throw new Error('failed to fetch');
                 const data = (await response.json()) as GeoCollection;
-                if (mounted) {
-                    setFeatures(data.features || []);
-                }
+                if (mounted) setFeatures(data.features || []);
             } catch (err) {
                 console.error(err);
                 if (mounted) setError(true);
@@ -116,12 +118,39 @@ export const CountrySizeCompare = () => {
             }
         };
         load();
-        return () => {
-            mounted = false;
-        };
+        return () => { mounted = false; };
     }, [resolution]);
 
-    const countries = useMemo(() => {
+    // Lazy-load admin-1 when requested by search
+    useEffect(() => {
+        if (!admin1Requested) return;
+        if (admin1Features !== null) return;
+        let mounted = true;
+        setAdmin1Loading(true);
+        fetch('/data/admin1-110m.geojson')
+            .then((res) => res.json())
+            .then((data: GeoCollection) => {
+                if (mounted) setAdmin1Features(data.features || []);
+            })
+            .catch((err) => {
+                console.error('Failed to load admin-1 data:', err);
+                if (mounted) setAdmin1Features([]);
+            })
+            .finally(() => {
+                if (mounted) setAdmin1Loading(false);
+            });
+        return () => { mounted = false; };
+    }, [admin1Requested, admin1Features]);
+
+    const handleRequestAdmin1 = useCallback(() => {
+        setAdmin1Requested(true);
+    }, []);
+
+    /* ══════════════════════════════════════════════════════════
+       ENTRY BUILDING
+    ══════════════════════════════════════════════════════════ */
+
+    const countries: CompareEntry[] = useMemo(() => {
         const unknownLabel = t('Unknown');
         return features
             .map((feature) => {
@@ -137,217 +166,148 @@ export const CountrySizeCompare = () => {
                     name,
                     areaKm2,
                     officialAreaKm2,
-                    feature,
-                } satisfies CountryEntry;
+                    features: [feature],
+                    mode: 'country' as const,
+                };
             })
             .sort((a, b) => a.label.localeCompare(b.label));
     }, [features, i18n.language, t]);
 
-    useEffect(() => {
-        if (!countries.length) return;
-        if (!primaryId) {
-            const defaultPrimary = countries.find((country) => country.name === 'South Korea') ?? countries[0];
-            setPrimaryId(defaultPrimary.id);
-        }
-        if (!secondaryId) {
-            const defaultSecondary = countries.find((country) => country.name === 'United States of America')
-                ?? countries[1]
-                ?? countries[0];
-            setSecondaryId(defaultSecondary.id);
-        }
-    }, [countries, primaryId, secondaryId]);
+    const continentEntries = useMemo(() => {
+        if (!features.length) return [];
+        return buildContinentEntries(features, (name) => t(name));
+    }, [features, t]);
 
-    const primary = countries.find((country) => country.id === primaryId) ?? null;
-    const secondary = countries.find((country) => country.id === secondaryId) ?? null;
+    const subregionEntries = useMemo(() => {
+        if (!features.length) return [];
+        return buildSubregionEntries(features, (name) => t(name));
+    }, [features, t]);
+
+    const countryLabelMap = useMemo(() => {
+        const map = new Map<string, string>();
+        for (const c of countries) {
+            if (c.iso3) map.set(c.iso3, c.label);
+        }
+        return map;
+    }, [countries]);
+
+    const admin1Entries = useMemo(() => {
+        if (!admin1Features || !admin1Features.length) return [];
+        return buildAdmin1Entries(admin1Features, countryLabelMap);
+    }, [admin1Features, countryLabelMap]);
+
+    /* ══════════════════════════════════════════════════════════
+       SELECTION HANDLERS
+    ══════════════════════════════════════════════════════════ */
+
+    const handleAddEntry = useCallback((entry: CompareEntry) => {
+        setSelectedEntries(prev => {
+            if (prev.length >= MAX_SELECTED_ENTITIES) return prev;
+            if (prev.some(e => e.id === entry.id)) return prev;
+            const usedColors = new Set(prev.map(e => e.colorIndex));
+            let colorIndex = 0;
+            for (let i = 0; i < ENTITY_COLORS.length; i++) {
+                if (!usedColors.has(i)) { colorIndex = i; break; }
+            }
+            return [...prev, { ...entry, colorIndex }];
+        });
+    }, []);
+
+    const handleRemoveEntry = useCallback((id: string) => {
+        setSelectedEntries(prev => prev.filter(e => e.id !== id));
+        setEntityOffsets(prev => {
+            const next = new Map(prev);
+            next.delete(id);
+            return next;
+        });
+        setDragTarget(prev => prev === id ? '__pan__' : prev);
+    }, []);
+
+    // Initialize with South Korea + USA
+    useEffect(() => {
+        if (initializedRef.current || !countries.length) return;
+        initializedRef.current = true;
+        const korea = countries.find(c => c.name === 'South Korea');
+        const usa = countries.find(c => c.name === 'United States of America');
+        const initial: SelectedEntry[] = [];
+        if (korea) initial.push({ ...korea, colorIndex: 0 });
+        if (usa) initial.push({ ...usa, colorIndex: 1 });
+        if (initial.length) setSelectedEntries(initial);
+    }, [countries]);
+
+    /* ══════════════════════════════════════════════════════════
+       ZOOM, PAN, RESET
+    ══════════════════════════════════════════════════════════ */
 
     const autoZoom = useMemo(() => {
-        if (!primary || !secondary) return 1;
-        const primaryArea = primary.officialAreaKm2 ?? primary.areaKm2;
-        const secondaryArea = secondary.officialAreaKm2 ?? secondary.areaKm2;
-        const biggerArea = Math.max(primaryArea, secondaryArea);
-        const smallerArea = Math.max(1, Math.min(primaryArea, secondaryArea));
-        const areaRatio = biggerArea / smallerArea;
+        if (selectedEntries.length < 2) return 1;
+        const areas = selectedEntries.map(e => e.officialAreaKm2 ?? e.areaKm2);
+        const biggestArea = Math.max(...areas);
+        const smallestArea = Math.max(1, Math.min(...areas));
+        const areaRatio = biggestArea / smallestArea;
         const sizeRatio = Math.sqrt(areaRatio);
         const boost = Math.log10(sizeRatio) * 1.2 + (sizeRatio > 5 ? Math.log2(sizeRatio) * 0.3 : 0);
         return clamp(1 + boost, 0.9, 6);
-    }, [primary, secondary]);
+    }, [selectedEntries]);
 
     useEffect(() => {
-        if (!primary || !secondary) return;
+        if (selectedEntries.length === 0) return;
         setZoom(autoZoom);
-    }, [autoZoom, primary, secondary]);
+    }, [autoZoom, selectedEntries.length]);
 
-    useEffect(() => {
-        if (!isFullscreen) return;
-        document.body.classList.add('cc-fullscreen-lock');
-        const orientation = window.screen?.orientation as ScreenOrientation & { lock?: (type: string) => Promise<void>; unlock?: () => void };
-        if (orientation?.lock) {
-            orientation.lock('landscape').catch(() => {});
-        }
-        return () => {
-            document.body.classList.remove('cc-fullscreen-lock');
-            orientation?.unlock?.();
-        };
-    }, [isFullscreen]);
-
+    // Reset when selection or resolution changes
+    const selectionKey = selectedEntries.map(e => e.id).sort().join(',');
     useEffect(() => {
         setPan({ x: 0, y: 0 });
-        setPrimaryOffset({ x: 0, y: 0 });
-        setSecondaryOffset({ x: 0, y: 0 });
+        setEntityOffsets(new Map());
         dragStateRef.current = null;
         pointerCacheRef.current.clear();
         pinchStateRef.current = null;
         setIsDragging(false);
-        setDragTarget('both');
-    }, [primaryId, secondaryId, resolution]);
+    }, [selectionKey, resolution]);
 
-    const overlay = useMemo(() => {
-        if (!primary || !secondary) return null;
+    useEffect(() => {
+        if (!isFullscreen) return;
+        document.body.classList.add('cc-fullscreen-lock');
 
-        const projection = geoEqualEarth().scale(1).translate([0, 0]);
-        const pathGenerator = geoPath(projection);
-
-        const primaryPath = pathGenerator(primary.feature);
-        const secondaryPath = pathGenerator(secondary.feature);
-        if (!primaryPath || !secondaryPath) return null;
-
-        const primaryBounds = pathGenerator.bounds(primary.feature);
-        const secondaryBounds = pathGenerator.bounds(secondary.feature);
-
-        const primaryWidth = primaryBounds[1][0] - primaryBounds[0][0];
-        const primaryHeight = primaryBounds[1][1] - primaryBounds[0][1];
-        const secondaryWidth = secondaryBounds[1][0] - secondaryBounds[0][0];
-        const secondaryHeight = secondaryBounds[1][1] - secondaryBounds[0][1];
-
-        const maxWidth = Math.max(primaryWidth, secondaryWidth, 1);
-        const maxHeight = Math.max(primaryHeight, secondaryHeight, 1);
-        const scale = Math.min((VIEWBOX_WIDTH * 0.82) / maxWidth, (VIEWBOX_HEIGHT * 0.82) / maxHeight);
-        const scaled = scale * zoom;
-
-        const primaryCenter: [number, number] = [
-            (primaryBounds[0][0] + primaryBounds[1][0]) / 2,
-            (primaryBounds[0][1] + primaryBounds[1][1]) / 2,
-        ];
-        const secondaryCenter: [number, number] = [
-            (secondaryBounds[0][0] + secondaryBounds[1][0]) / 2,
-            (secondaryBounds[0][1] + secondaryBounds[1][1]) / 2,
-        ];
-
-        const baseTranslate = `translate(${VIEWBOX_WIDTH / 2 + pan.x}, ${VIEWBOX_HEIGHT / 2 + pan.y}) scale(${scaled})`;
-
-        const primaryAreaVal = primary.officialAreaKm2 ?? primary.areaKm2;
-        const secondaryAreaVal = secondary.officialAreaKm2 ?? secondary.areaKm2;
-        const smallerIsPrimary = primaryAreaVal < secondaryAreaVal;
-        const areaRatioOverlay = Math.max(primaryAreaVal, secondaryAreaVal) / Math.max(1, Math.min(primaryAreaVal, secondaryAreaVal));
-        const showSmallMarker = areaRatioOverlay > 8;
-
-        let smallMarkerPos: { x: number; y: number } | null = null;
-        if (showSmallMarker) {
-            const smallCenter = smallerIsPrimary ? primaryCenter : secondaryCenter;
-            const smallOffset = smallerIsPrimary ? primaryOffset : secondaryOffset;
-            smallMarkerPos = {
-                x: VIEWBOX_WIDTH / 2 + pan.x + (smallOffset.x - smallCenter[0] + smallCenter[0]) * scaled - smallCenter[0] * scaled,
-                y: VIEWBOX_HEIGHT / 2 + pan.y + (smallOffset.y - smallCenter[1] + smallCenter[1]) * scaled - smallCenter[1] * scaled,
-            };
+        // Only request browser fullscreen + orientation lock on mobile/touch devices
+        const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        if (isMobile) {
+            const el = document.documentElement;
+            const requestFS = el.requestFullscreen
+                ?? (el as HTMLElement & { webkitRequestFullscreen?: () => Promise<void> }).webkitRequestFullscreen;
+            if (requestFS) {
+                requestFS.call(el).then(() => {
+                    const orientation = window.screen?.orientation as ScreenOrientation & { lock?: (type: string) => Promise<void> };
+                    orientation?.lock?.('landscape').catch(() => {});
+                }).catch(() => {});
+            }
         }
 
-        return {
-            primaryPath,
-            secondaryPath,
-            primaryTransform: `${baseTranslate} translate(${primaryOffset.x - primaryCenter[0]}, ${primaryOffset.y - primaryCenter[1]})`,
-            secondaryTransform: `${baseTranslate} translate(${secondaryOffset.x - secondaryCenter[0]}, ${secondaryOffset.y - secondaryCenter[1]})`,
-            primaryBounds,
-            secondaryBounds,
-            primaryCenter,
-            secondaryCenter,
-            scaled,
-            showSmallMarker,
-            smallMarkerPos,
-            smallerIsPrimary,
+        return () => {
+            document.body.classList.remove('cc-fullscreen-lock');
+            if (document.fullscreenElement) {
+                const exitFS = document.exitFullscreen
+                    ?? (document as Document & { webkitExitFullscreen?: () => Promise<void> }).webkitExitFullscreen;
+                exitFS?.call(document).catch(() => {});
+            }
         };
-    }, [primary, secondary, zoom, pan, primaryOffset, secondaryOffset]);
+    }, [isFullscreen]);
 
-    const ratioData = useMemo(() => {
-        if (!primary || !secondary) return null;
-        const primaryArea = primary.officialAreaKm2 ?? primary.areaKm2;
-        const secondaryArea = secondary.officialAreaKm2 ?? secondary.areaKm2;
-        const ratio = primaryArea / secondaryArea;
-        const bigger = ratio >= 1 ? primary : secondary;
-        const smaller = ratio >= 1 ? secondary : primary;
-        const normalizedRatio = ratio >= 1 ? ratio : 1 / ratio;
-        return {
-            ratio: normalizedRatio,
-            bigger,
-            smaller,
+    // Sync: if user exits browser fullscreen via Escape, also exit our fullscreen state
+    useEffect(() => {
+        const handler = () => {
+            if (!document.fullscreenElement && isFullscreen) {
+                setIsFullscreen(false);
+            }
         };
-    }, [primary, secondary]);
-
-    const rankedCountries = useMemo(() => {
-        return [...countries]
-            .map((country) => ({
-                ...country,
-                rankingAreaKm2: country.officialAreaKm2 ?? country.areaKm2,
-            }))
-            .sort((a, b) => b.rankingAreaKm2 - a.rankingAreaKm2);
-    }, [countries]);
-
-    const rankById = useMemo(() => {
-        const map = new Map<string, number>();
-        rankedCountries.forEach((country, index) => {
-            map.set(country.id, index + 1);
-        });
-        return map;
-    }, [rankedCountries]);
-
-    const areaBlocks = useMemo(() => {
-        if (!primary || !secondary) return null;
-        const primaryArea = primary.officialAreaKm2 ?? primary.areaKm2;
-        const secondaryArea = secondary.officialAreaKm2 ?? secondary.areaKm2;
-        const primarySize = Math.sqrt(primaryArea);
-        const secondarySize = Math.sqrt(secondaryArea);
-        const width = 900;
-        const height = 320;
-        const gap = 60;
-        const maxHeight = Math.max(primarySize, secondarySize);
-        const scale = Math.min((width - gap) / (primarySize + secondarySize), height / maxHeight);
-        const primaryWidth = primarySize * scale;
-        const primaryHeight = primarySize * scale;
-        const secondaryWidth = secondarySize * scale;
-        const secondaryHeight = secondarySize * scale;
-        const startX = (width - (primaryWidth + secondaryWidth + gap)) / 2;
-        return {
-            width,
-            height,
-            primaryRect: {
-                x: startX,
-                y: (height - primaryHeight) / 2,
-                width: primaryWidth,
-                height: primaryHeight,
-            },
-            secondaryRect: {
-                x: startX + primaryWidth + gap,
-                y: (height - secondaryHeight) / 2,
-                width: secondaryWidth,
-                height: secondaryHeight,
-            },
+        document.addEventListener('fullscreenchange', handler);
+        document.addEventListener('webkitfullscreenchange', handler);
+        return () => {
+            document.removeEventListener('fullscreenchange', handler);
+            document.removeEventListener('webkitfullscreenchange', handler);
         };
-    }, [primary, secondary]);
-
-    const areaDifferences = useMemo(() => {
-        const build = (country: CountryEntry) => {
-            if (!country.officialAreaKm2) return null;
-            const delta = ((country.areaKm2 - country.officialAreaKm2) / country.officialAreaKm2) * 100;
-            return {
-                delta,
-                direction: delta < 0 ? 'smaller' : 'larger',
-                magnitude: Math.abs(delta),
-            };
-        };
-        return {
-            primary: primary ? build(primary) : null,
-            secondary: secondary ? build(secondary) : null,
-        };
-    }, [primary, secondary]);
+    }, [isFullscreen]);
 
     const handleZoomChange = (value: number) => {
         const nextZoom = clamp(value, MIN_ZOOM, MAX_ZOOM);
@@ -360,38 +320,164 @@ export const CountrySizeCompare = () => {
         setZoom(nextZoom);
     };
 
-    const handleFocusSmaller = () => {
-        if (!overlay || !ratioData) return;
-        const smallerIsPrimary = ratioData.smaller.id === primary?.id;
-        const bounds = smallerIsPrimary ? overlay.primaryBounds : overlay.secondaryBounds;
-        const center = smallerIsPrimary ? overlay.primaryCenter : overlay.secondaryCenter;
-        const offset = smallerIsPrimary ? primaryOffset : secondaryOffset;
-        const w = bounds[1][0] - bounds[0][0];
-        const h = bounds[1][1] - bounds[0][1];
-        const baseScale = Math.min((VIEWBOX_WIDTH * 0.82) / Math.max(w, 1), (VIEWBOX_HEIGHT * 0.82) / Math.max(h, 1));
-        const targetZoom = clamp(baseScale * 0.7, MIN_ZOOM, MAX_ZOOM);
-        const cx = (offset.x - center[0] + center[0]) * baseScale;
-        const cy = (offset.y - center[1] + center[1]) * baseScale;
-        setZoom(targetZoom);
-        setPan({ x: -cx * (targetZoom / baseScale), y: -cy * (targetZoom / baseScale) });
-    };
+    /* ══════════════════════════════════════════════════════════
+       OVERLAY GEOMETRY (split: paths stable, transforms cheap)
+    ══════════════════════════════════════════════════════════ */
+
+    const entityGeo: EntityGeo[] = useMemo(() => {
+        if (selectedEntries.length === 0) return [];
+        const projection = geoEqualEarth().scale(1).translate([0, 0]);
+        const pathGenerator = geoPath(projection);
+
+        return selectedEntries.map(entry => {
+            const paths = entry.features.map(f => pathGenerator(f)).filter(Boolean) as string[];
+            const bounds = entry.features.length === 1
+                ? pathGenerator.bounds(entry.features[0])
+                : unionBounds(entry.features);
+            const center: [number, number] = [
+                (bounds[0][0] + bounds[1][0]) / 2,
+                (bounds[0][1] + bounds[1][1]) / 2,
+            ];
+            return { id: entry.id, paths, bounds, center, colorIndex: entry.colorIndex };
+        });
+    }, [selectedEntries]);
+
+    const overlay = useMemo(() => {
+        if (entityGeo.length === 0) return null;
+
+        let maxWidth = 0, maxHeight = 0;
+        for (const e of entityGeo) {
+            const w = e.bounds[1][0] - e.bounds[0][0];
+            const h = e.bounds[1][1] - e.bounds[0][1];
+            if (w > maxWidth) maxWidth = w;
+            if (h > maxHeight) maxHeight = h;
+        }
+        const scale = Math.min(
+            (VIEWBOX_WIDTH * 0.82) / Math.max(maxWidth, 1),
+            (VIEWBOX_HEIGHT * 0.82) / Math.max(maxHeight, 1),
+        );
+        const scaled = scale * zoom;
+        const baseTranslate = `translate(${VIEWBOX_WIDTH / 2 + pan.x}, ${VIEWBOX_HEIGHT / 2 + pan.y}) scale(${scaled})`;
+
+        const entities = entityGeo.map(e => {
+            const offset = entityOffsets.get(e.id) || { x: 0, y: 0 };
+            return {
+                ...e,
+                transform: `${baseTranslate} translate(${offset.x - e.center[0]}, ${offset.y - e.center[1]})`,
+            };
+        });
+
+        return { entities, scaled };
+    }, [entityGeo, zoom, pan, entityOffsets]);
+
+    /* ══════════════════════════════════════════════════════════
+       AREA BLOCKS
+    ══════════════════════════════════════════════════════════ */
+
+    const areaBlocks = useMemo(() => {
+        if (selectedEntries.length === 0) return null;
+        const entries = selectedEntries.map(e => ({
+            id: e.id,
+            label: e.label,
+            colorIndex: e.colorIndex,
+            area: e.officialAreaKm2 ?? e.areaKm2,
+        }));
+        const sizes = entries.map(e => Math.sqrt(e.area));
+        const maxSize = Math.max(...sizes);
+        const svgWidth = 900;
+        const svgHeight = 350;
+        const gap = Math.max(8, Math.round(60 / entries.length));
+        const totalSizeWidth = sizes.reduce((s, sz) => s + sz, 0);
+        const totalGaps = Math.max(0, entries.length - 1) * gap;
+        const scale = Math.min(
+            (svgWidth - totalGaps - 40) / Math.max(totalSizeWidth, 1),
+            (svgHeight - 40) / Math.max(maxSize, 1),
+        );
+
+        let currentX = (svgWidth - (totalSizeWidth * scale + totalGaps)) / 2;
+        const rects = entries.map((e, i) => {
+            const w = sizes[i] * scale;
+            const h = sizes[i] * scale;
+            const rect = { x: currentX, y: (svgHeight - 30 - h) / 2, width: w, height: h };
+            currentX += w + gap;
+            return { ...e, rect };
+        });
+
+        return { svgWidth, svgHeight, rects };
+    }, [selectedEntries]);
+
+    /* ══════════════════════════════════════════════════════════
+       RANKING
+    ══════════════════════════════════════════════════════════ */
+
+    const activeModesSet = useMemo(() => {
+        const modes = new Set<CompareMode>();
+        for (const e of selectedEntries) modes.add(e.mode);
+        return modes;
+    }, [selectedEntries]);
+
+    const rankedEntries = useMemo(() => {
+        const all: CompareEntry[] = [];
+        const modes = activeModesSet.size > 0 ? activeModesSet : new Set(['country']);
+        if (modes.has('country')) all.push(...countries);
+        if (modes.has('continent')) all.push(...continentEntries);
+        if (modes.has('subregion')) all.push(...subregionEntries);
+        if (modes.has('admin1')) all.push(...admin1Entries);
+        return all
+            .map(e => ({ ...e, rankingAreaKm2: e.officialAreaKm2 ?? e.areaKm2 }))
+            .sort((a, b) => b.rankingAreaKm2 - a.rankingAreaKm2);
+    }, [activeModesSet, countries, continentEntries, subregionEntries, admin1Entries]);
+
+    const rankById = useMemo(() => {
+        const map = new Map<string, number>();
+        rankedEntries.forEach((entry, index) => map.set(entry.id, index + 1));
+        return map;
+    }, [rankedEntries]);
+
+    const selectedColorMap = useMemo(() => {
+        const map = new Map<string, number>();
+        for (const e of selectedEntries) map.set(e.id, e.colorIndex);
+        return map;
+    }, [selectedEntries]);
+
+    const pinnedEntries = useMemo(() => {
+        if (showAllRanks || selectedEntries.length === 0) return [];
+        const topIds = new Set(rankedEntries.slice(0, RANKING_LIMIT).map(c => c.id));
+        return rankedEntries.filter(c => selectedColorMap.has(c.id) && !topIds.has(c.id));
+    }, [showAllRanks, rankedEntries, selectedColorMap]);
+
+    const rankingList = showAllRanks ? rankedEntries : rankedEntries.slice(0, RANKING_LIMIT);
+
+    /* ══════════════════════════════════════════════════════════
+       DRAG & POINTER HANDLERS
+    ══════════════════════════════════════════════════════════ */
 
     const handlePointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
         const rect = event.currentTarget.getBoundingClientRect();
         pointerCacheRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
         if (pointerCacheRef.current.size === 1) {
+            // Determine drag entity: explicit target > SVG hit-test > pan
+            let resolvedEntityId: string | null = null;
+            if (dragTarget !== '__pan__') {
+                // Explicit entity selected in toolbar
+                resolvedEntityId = dragTarget;
+            } else {
+                // Auto-detect via SVG hit-test
+                const entityGroup = (event.target as Element).closest('[data-entity-id]');
+                resolvedEntityId = entityGroup?.getAttribute('data-entity-id') || null;
+            }
+            const hitOffset = resolvedEntityId ? (entityOffsets.get(resolvedEntityId) || { x: 0, y: 0 }) : { x: 0, y: 0 };
+
             dragStateRef.current = {
                 startX: event.clientX,
                 startY: event.clientY,
                 originPanX: pan.x,
                 originPanY: pan.y,
-                originPrimaryX: primaryOffset.x,
-                originPrimaryY: primaryOffset.y,
-                originSecondaryX: secondaryOffset.x,
-                originSecondaryY: secondaryOffset.y,
+                entityId: resolvedEntityId,
+                originEntityOffset: { ...hitOffset },
                 scaleX: rect.width ? VIEWBOX_WIDTH / rect.width : 1,
                 scaleY: rect.height ? VIEWBOX_HEIGHT / rect.height : 1,
-                target: dragTarget,
             };
         } else if (pointerCacheRef.current.size === 2) {
             const points = Array.from(pointerCacheRef.current.values());
@@ -421,6 +507,8 @@ export const CountrySizeCompare = () => {
         if (pointerCacheRef.current.has(event.pointerId)) {
             pointerCacheRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
         }
+
+        // Pinch zoom
         if (pointerCacheRef.current.size === 2 && pinchStateRef.current) {
             const points = Array.from(pointerCacheRef.current.values());
             const dx = points[0].x - points[1].x;
@@ -431,7 +519,6 @@ export const CountrySizeCompare = () => {
             const ratio = pinchStateRef.current.distance ? distance / pinchStateRef.current.distance : 1;
             const nextZoom = clamp(pinchStateRef.current.zoom * ratio, MIN_ZOOM, MAX_ZOOM);
             setZoom(nextZoom);
-
             const scaleX = pinchStateRef.current.scaleX || 1;
             const scaleY = pinchStateRef.current.scaleY || 1;
             const dxMid = (midX - pinchStateRef.current.midX) * scaleX;
@@ -440,92 +527,26 @@ export const CountrySizeCompare = () => {
             return;
         }
 
+        // Single-pointer drag
         if (!dragStateRef.current) return;
-        const {
-            startX,
-            startY,
-            originPanX,
-            originPanY,
-            originPrimaryX,
-            originPrimaryY,
-            originSecondaryX,
-            originSecondaryY,
-            scaleX,
-            scaleY,
-            target,
-        } = dragStateRef.current;
+        const { startX, startY, originPanX, originPanY, entityId, originEntityOffset, scaleX, scaleY } = dragStateRef.current;
         const dx = (event.clientX - startX) * scaleX;
         const dy = (event.clientY - startY) * scaleY;
-        const scaled = overlay.scaled || 1;
-        const dxProjected = dx / scaled;
-        const dyProjected = dy / scaled;
-        const margin = 24;
 
-        const clampOffset = (
-            next: { x: number; y: number },
-            bounds: [[number, number], [number, number]],
-            center: [number, number],
-            panValue: { x: number; y: number },
-        ) => {
-            const minX = (margin - VIEWBOX_WIDTH / 2 - panValue.x) / scaled - (bounds[0][0] - center[0]);
-            const maxX = (VIEWBOX_WIDTH - margin - VIEWBOX_WIDTH / 2 - panValue.x) / scaled - (bounds[1][0] - center[0]);
-            const minY = (margin - VIEWBOX_HEIGHT / 2 - panValue.y) / scaled - (bounds[0][1] - center[1]);
-            const maxY = (VIEWBOX_HEIGHT - margin - VIEWBOX_HEIGHT / 2 - panValue.y) / scaled - (bounds[1][1] - center[1]);
-            const lowX = Math.min(minX, maxX);
-            const highX = Math.max(minX, maxX);
-            const lowY = Math.min(minY, maxY);
-            const highY = Math.max(minY, maxY);
-            return {
-                x: clamp(next.x, lowX, highX),
-                y: clamp(next.y, lowY, highY),
-            };
-        };
-
-        const clampPan = (next: { x: number; y: number }) => {
-            const unionMinX = Math.min(
-                overlay.primaryBounds[0][0] + primaryOffset.x - overlay.primaryCenter[0],
-                overlay.secondaryBounds[0][0] + secondaryOffset.x - overlay.secondaryCenter[0],
-            );
-            const unionMaxX = Math.max(
-                overlay.primaryBounds[1][0] + primaryOffset.x - overlay.primaryCenter[0],
-                overlay.secondaryBounds[1][0] + secondaryOffset.x - overlay.secondaryCenter[0],
-            );
-            const unionMinY = Math.min(
-                overlay.primaryBounds[0][1] + primaryOffset.y - overlay.primaryCenter[1],
-                overlay.secondaryBounds[0][1] + secondaryOffset.y - overlay.secondaryCenter[1],
-            );
-            const unionMaxY = Math.max(
-                overlay.primaryBounds[1][1] + primaryOffset.y - overlay.primaryCenter[1],
-                overlay.secondaryBounds[1][1] + secondaryOffset.y - overlay.secondaryCenter[1],
-            );
-
-            const minX = margin - VIEWBOX_WIDTH / 2 - unionMinX * scaled;
-            const maxX = VIEWBOX_WIDTH - margin - VIEWBOX_WIDTH / 2 - unionMaxX * scaled;
-            const minY = margin - VIEWBOX_HEIGHT / 2 - unionMinY * scaled;
-            const maxY = VIEWBOX_HEIGHT - margin - VIEWBOX_HEIGHT / 2 - unionMaxY * scaled;
-            const lowX = Math.min(minX, maxX);
-            const highX = Math.max(minX, maxX);
-            const lowY = Math.min(minY, maxY);
-            const highY = Math.max(minY, maxY);
-
-            return {
-                x: clamp(next.x, lowX, highX),
-                y: clamp(next.y, lowY, highY),
-            };
-        };
-        if (target === 'both') {
-            const nextPan = { x: originPanX + dx, y: originPanY + dy };
-            setPan(clampPan(nextPan));
-        } else if (target === 'primary') {
-            const nextOffset = { x: originPrimaryX + dxProjected, y: originPrimaryY + dyProjected };
-            setPrimaryOffset(
-                clampOffset(nextOffset, overlay.primaryBounds, overlay.primaryCenter, pan),
-            );
+        if (entityId) {
+            const scaled = overlay.scaled || 1;
+            const dxProjected = dx / scaled;
+            const dyProjected = dy / scaled;
+            setEntityOffsets(prev => {
+                const next = new Map(prev);
+                next.set(entityId, {
+                    x: originEntityOffset.x + dxProjected,
+                    y: originEntityOffset.y + dyProjected,
+                });
+                return next;
+            });
         } else {
-            const nextOffset = { x: originSecondaryX + dxProjected, y: originSecondaryY + dyProjected };
-            setSecondaryOffset(
-                clampOffset(nextOffset, overlay.secondaryBounds, overlay.secondaryCenter, pan),
-            );
+            setPan({ x: originPanX + dx, y: originPanY + dy });
         }
     };
 
@@ -541,18 +562,59 @@ export const CountrySizeCompare = () => {
         event.currentTarget.releasePointerCapture(event.pointerId);
     };
 
-    const primaryAreaDisplay = primary ? (primary.officialAreaKm2 ?? primary.areaKm2) : null;
-    const secondaryAreaDisplay = secondary ? (secondary.officialAreaKm2 ?? secondary.areaKm2) : null;
-    const primaryRank = primary ? rankById.get(primary.id) ?? null : null;
-    const secondaryRank = secondary ? rankById.get(secondary.id) ?? null : null;
-    const pinnedCountries = useMemo(() => {
-        if (showAllRanks || !primary || !secondary) return [];
-        const topIds = new Set(rankedCountries.slice(0, RANKING_LIMIT).map((c) => c.id));
-        return rankedCountries.filter(
-            (c) => (c.id === primary.id || c.id === secondary.id) && !topIds.has(c.id),
-        );
-    }, [showAllRanks, rankedCountries, primary, secondary]);
-    const rankingList = showAllRanks ? rankedCountries : rankedCountries.slice(0, RANKING_LIMIT);
+    /* ─── Wheel zoom ─── */
+    const handleWheel = useCallback((event: React.WheelEvent<SVGSVGElement>) => {
+        event.preventDefault();
+        const delta = -event.deltaY * 0.002;
+        setZoom(prev => {
+            const next = clamp(prev * (1 + delta), MIN_ZOOM, MAX_ZOOM);
+            const ratio = prev ? next / prev : 1;
+            setPan(p => ({ x: p.x * ratio, y: p.y * ratio }));
+            return next;
+        });
+    }, []);
+
+    /* ══════════════════════════════════════════════════════════
+       SHARED SVG RENDERER
+    ══════════════════════════════════════════════════════════ */
+
+    const renderOverlaySvg = (svgClass: string) => (
+        <svg
+            className={svgClass}
+            viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
+            role="img"
+            aria-label={t('Size comparison of {{count}} regions', { count: selectedEntries.length })}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerEnd}
+            onPointerCancel={handlePointerEnd}
+            onWheel={handleWheel}
+        >
+            {overlay && overlay.entities.map(entity => {
+                const color = ENTITY_COLORS[entity.colorIndex];
+                return (
+                    <g key={entity.id} transform={entity.transform} data-entity-id={entity.id}>
+                        {entity.paths.map((d, i) => (
+                            <path
+                                key={i}
+                                d={d}
+                                fill={color.fill}
+                                stroke={color.stroke}
+                                strokeWidth={1.8}
+                                className="map-path-entity"
+                            />
+                        ))}
+                    </g>
+                );
+            })}
+        </svg>
+    );
+
+    /* ══════════════════════════════════════════════════════════
+       RENDER
+    ══════════════════════════════════════════════════════════ */
+
+    const hasSelection = selectedEntries.length > 0;
 
     return (
         <>
@@ -569,6 +631,7 @@ export const CountrySizeCompare = () => {
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.4 }}
             >
+            {/* ─── HERO ─── */}
             <div className="country-compare-hero">
                 <motion.div
                     className="country-compare-title"
@@ -577,51 +640,27 @@ export const CountrySizeCompare = () => {
                     transition={{ duration: 0.6 }}
                 >
                     <p className="country-compare-kicker">{t('True Size Atlas')}</p>
-                    <h1>{t('Compare two countries at real scale')}</h1>
+                    <h1>{t('Compare sizes at real scale')}</h1>
                     <p className="country-compare-subtitle">
-                        {t('Pick two countries to see their actual land area side by side and overlapped.')}
+                        {t('Search and add countries, continents, subregions, or states to compare their actual sizes on the map.')}
                     </p>
                 </motion.div>
             </div>
 
-            <div className="country-compare-controls">
-                <div className="country-compare-select">
-                    <label htmlFor="country-primary">{t('Country A')}</label>
-                    <select
-                        id="country-primary"
-                        value={primaryId}
-                        onChange={(event) => setPrimaryId(event.target.value)}
-                    >
-                        <option value="" disabled>
-                            {t('Select a country')}
-                        </option>
-                        {countries.map((country) => (
-                            <option key={country.id} value={country.id}>
-                                {country.label}
-                            </option>
-                        ))}
-                    </select>
-                </div>
+            {/* ─── SEARCH ─── */}
+            <CompareSearchInput
+                countries={countries}
+                continents={continentEntries}
+                subregions={subregionEntries}
+                admin1={admin1Entries}
+                admin1Loading={admin1Loading}
+                selectedEntries={selectedEntries}
+                onAdd={handleAddEntry}
+                onRemove={handleRemoveEntry}
+                onRequestAdmin1={handleRequestAdmin1}
+            />
 
-                <div className="country-compare-select">
-                    <label htmlFor="country-secondary">{t('Country B')}</label>
-                    <select
-                        id="country-secondary"
-                        value={secondaryId}
-                        onChange={(event) => setSecondaryId(event.target.value)}
-                    >
-                        <option value="" disabled>
-                            {t('Select a country')}
-                        </option>
-                        {countries.map((country) => (
-                            <option key={country.id} value={country.id}>
-                                {country.label}
-                            </option>
-                        ))}
-                    </select>
-                </div>
-            </div>
-
+            {/* ─── OPTIONS ─── */}
             <button
                 className="mobile-options-toggle"
                 onClick={() => setShowOptions((v) => !v)}
@@ -646,55 +685,45 @@ export const CountrySizeCompare = () => {
                 </p>
             </div>
 
+            {/* ─── LOADING / ERROR ─── */}
             {loading && (
                 <div className="country-compare-message">{t('Loading countries...')}</div>
             )}
-
             {!loading && error && (
                 <div className="country-compare-message error">{t('Unable to load country shapes.')}</div>
             )}
 
-            {!loading && !error && primary && secondary && (
+            {/* ─── MAIN CONTENT (when loaded & selected) ─── */}
+            {!loading && !error && hasSelection && (
                 <>
-                    <div className="country-compare-stats">
-                        <div className="country-compare-stat primary">
-                            <span className="stat-label">{t('Area')}</span>
-                            <h3>{primary.label}</h3>
-                            <p className="stat-value mono">
-                                {primaryAreaDisplay ? formatArea(primaryAreaDisplay, i18n.language) : '--'} {t('km²')}
-                            </p>
-                            <p className="stat-rank">
-                                {primaryRank ? t('Rank #{{rank}}', { rank: primaryRank }) : t('Rank unavailable')}
-                            </p>
-                        </div>
-                        <div className="country-compare-stat secondary">
-                            <span className="stat-label">{t('Area')}</span>
-                            <h3>{secondary.label}</h3>
-                            <p className="stat-value mono">
-                                {secondaryAreaDisplay ? formatArea(secondaryAreaDisplay, i18n.language) : '--'} {t('km²')}
-                            </p>
-                            <p className="stat-rank">
-                                {secondaryRank ? t('Rank #{{rank}}', { rank: secondaryRank }) : t('Rank unavailable')}
-                            </p>
-                        </div>
-                        <div className="country-compare-stat ratio">
-                            <span className="stat-label">{t('Size ratio')}</span>
-                            <h3>{t('Scale difference')}</h3>
-                            <p className="stat-value mono">
-                                {ratioData ? `${formatRatio(ratioData.ratio, i18n.language)}x` : '--'}
-                            </p>
-                            {ratioData && (
-                                <p className="stat-note">
-                                    {t('{{bigger}} is {{ratio}}x the size of {{smaller}}', {
-                                        bigger: ratioData.bigger.label,
-                                        smaller: ratioData.smaller.label,
-                                        ratio: formatRatio(ratioData.ratio, i18n.language),
-                                    })}
-                                </p>
-                            )}
-                        </div>
+                    {/* ─── STATS STRIP ─── */}
+                    <div className="compare-stats-strip">
+                        {selectedEntries.map(entry => {
+                            const area = entry.officialAreaKm2 ?? entry.areaKm2;
+                            const rank = rankById.get(entry.id);
+                            const color = ENTITY_COLORS[entry.colorIndex];
+                            return (
+                                <div
+                                    key={entry.id}
+                                    className="compare-stat-card"
+                                    style={{ borderLeftColor: color.stroke }}
+                                >
+                                    <span className="stat-label">{t('Area')}</span>
+                                    <h3>{entry.label}</h3>
+                                    <p className="stat-value mono">
+                                        {formatArea(area, i18n.language)} {t('km²')}
+                                    </p>
+                                    {rank && (
+                                        <p className="stat-rank">
+                                            {t('Rank #{{rank}}', { rank })}
+                                        </p>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
 
+                    {/* ─── FULLSCREEN OVERLAY ─── */}
                     {isFullscreen && (
                         <motion.div
                             className="compare-fullscreen"
@@ -704,50 +733,38 @@ export const CountrySizeCompare = () => {
                             transition={{ duration: 0.25 }}
                         >
                             <div className={`fullscreen-map-stage${isDragging ? ' dragging' : ''}`}>
-                                <svg
-                                    viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
-                                    role="img"
-                                    aria-label={t('Overlay of {{countryA}} and {{countryB}}', {
-                                        countryA: primary.label,
-                                        countryB: secondary.label,
-                                    })}
-                                    onPointerDown={handlePointerDown}
-                                    onPointerMove={handlePointerMove}
-                                    onPointerUp={handlePointerEnd}
-                                    onPointerCancel={handlePointerEnd}
-                                >
-                                    {overlay && (
-                                        <>
-                                            <path
-                                                className="map-path primary"
-                                                d={overlay.primaryPath}
-                                                transform={overlay.primaryTransform}
-                                            />
-                                            <path
-                                                className="map-path secondary"
-                                                d={overlay.secondaryPath}
-                                                transform={overlay.secondaryTransform}
-                                            />
-                                            {overlay.showSmallMarker && overlay.smallMarkerPos && (
-                                                <g className="small-country-marker">
-                                                    <circle cx={overlay.smallMarkerPos.x} cy={overlay.smallMarkerPos.y} r={24} />
-                                                    <circle cx={overlay.smallMarkerPos.x} cy={overlay.smallMarkerPos.y} r={4} className="marker-dot" />
-                                                </g>
-                                            )}
-                                        </>
-                                    )}
-                                </svg>
+                                {renderOverlaySvg('fullscreen-svg')}
                             </div>
                             <div className="fullscreen-overlay-top">
-                                <div className="fullscreen-legend">
-                                    <span className="legend-item primary">
-                                        <span className="legend-dot" />
-                                        {primary.label}
-                                    </span>
-                                    <span className="legend-item secondary">
-                                        <span className="legend-dot" />
-                                        {secondary.label}
-                                    </span>
+                                <div className="fullscreen-legend" role="group" aria-label={t('Drag mode')}>
+                                    <button
+                                        type="button"
+                                        className={`legend-item legend-pan${dragTarget === '__pan__' ? ' active' : ''}`}
+                                        onClick={() => setDragTarget('__pan__')}
+                                        title={t('Pan view')}
+                                    >
+                                        ✋
+                                    </button>
+                                    {selectedEntries.map(entry => {
+                                        const color = ENTITY_COLORS[entry.colorIndex];
+                                        const isActive = dragTarget === entry.id;
+                                        return (
+                                            <button
+                                                key={entry.id}
+                                                type="button"
+                                                className={`legend-item${isActive ? ' active' : ''}`}
+                                                style={{ color: color.stroke }}
+                                                onClick={() => setDragTarget(isActive ? '__pan__' : entry.id)}
+                                                title={t('Move {{country}}', { country: entry.label })}
+                                            >
+                                                <span
+                                                    className="legend-dot"
+                                                    style={{ background: color.stroke, boxShadow: `0 0 12px ${color.stroke}` }}
+                                                />
+                                                {entry.label}
+                                            </button>
+                                        );
+                                    })}
                                 </div>
                                 <button
                                     type="button"
@@ -759,32 +776,6 @@ export const CountrySizeCompare = () => {
                                 </button>
                             </div>
                             <div className="fullscreen-overlay-bottom">
-                                <div className="fullscreen-selectors">
-                                    <select
-                                        id="country-primary-full"
-                                        value={primaryId}
-                                        onChange={(event) => setPrimaryId(event.target.value)}
-                                        aria-label={t('Country A')}
-                                    >
-                                        {countries.map((country) => (
-                                            <option key={country.id} value={country.id}>
-                                                {country.label}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <select
-                                        id="country-secondary-full"
-                                        value={secondaryId}
-                                        onChange={(event) => setSecondaryId(event.target.value)}
-                                        aria-label={t('Country B')}
-                                    >
-                                        {countries.map((country) => (
-                                            <option key={country.id} value={country.id}>
-                                                {country.label}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
                                 <div className="fullscreen-tools">
                                     <div className="fullscreen-zoom">
                                         <button
@@ -817,34 +808,12 @@ export const CountrySizeCompare = () => {
                                             +
                                         </button>
                                     </div>
-                                    <div className="fullscreen-move-toggle">
-                                        <button
-                                            type="button"
-                                            className={dragTarget === 'both' ? 'active' : ''}
-                                            onClick={() => setDragTarget('both')}
-                                        >
-                                            {t('Pan view')}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className={dragTarget === 'primary' ? 'active' : ''}
-                                            onClick={() => setDragTarget('primary')}
-                                        >
-                                            {primary.label}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className={dragTarget === 'secondary' ? 'active' : ''}
-                                            onClick={() => setDragTarget('secondary')}
-                                        >
-                                            {secondary.label}
-                                        </button>
-                                    </div>
                                 </div>
                             </div>
                         </motion.div>
                     )}
 
+                    {/* ─── MAP (INLINE) ─── */}
                     {!isFullscreen && (
                         <motion.div
                             className="country-compare-map"
@@ -855,15 +824,35 @@ export const CountrySizeCompare = () => {
                         <div className="map-header-compact">
                             <div className="map-title-row">
                                 <h2>{t('Overlay view')}</h2>
-                                <div className="map-legend-inline">
-                                    <span className="legend-item primary">
-                                        <span className="legend-dot" />
-                                        {primary.label}
-                                    </span>
-                                    <span className="legend-item secondary">
-                                        <span className="legend-dot" />
-                                        {secondary.label}
-                                    </span>
+                                <div className="map-legend-inline" role="group" aria-label={t('Drag mode')}>
+                                    <button
+                                        type="button"
+                                        className={`legend-item legend-pan${dragTarget === '__pan__' ? ' active' : ''}`}
+                                        onClick={() => setDragTarget('__pan__')}
+                                        title={t('Pan view')}
+                                    >
+                                        ✋
+                                    </button>
+                                    {selectedEntries.map(entry => {
+                                        const color = ENTITY_COLORS[entry.colorIndex];
+                                        const isActive = dragTarget === entry.id;
+                                        return (
+                                            <button
+                                                key={entry.id}
+                                                type="button"
+                                                className={`legend-item${isActive ? ' active' : ''}`}
+                                                style={{ color: color.stroke }}
+                                                onClick={() => setDragTarget(isActive ? '__pan__' : entry.id)}
+                                                title={t('Move {{country}}', { country: entry.label })}
+                                            >
+                                                <span
+                                                    className="legend-dot"
+                                                    style={{ background: color.stroke, boxShadow: `0 0 12px ${color.stroke}` }}
+                                                />
+                                                {entry.label}
+                                            </button>
+                                        );
+                                    })}
                                 </div>
                             </div>
                             <div className="map-toolbar">
@@ -897,37 +886,6 @@ export const CountrySizeCompare = () => {
                                             +
                                         </button>
                                     </div>
-                                </div>
-                                <div className="toolbar-row">
-                                    <div className="map-move-compact" role="group" aria-label={t('Drag mode')}>
-                                        <button
-                                            type="button"
-                                            className={dragTarget === 'both' ? 'active' : ''}
-                                            onClick={() => setDragTarget('both')}
-                                            title={t('Pan view')}
-                                            aria-label={t('Pan view')}
-                                        >
-                                            ✋
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className={dragTarget === 'primary' ? 'active primary-btn' : 'primary-btn'}
-                                            onClick={() => setDragTarget('primary')}
-                                            title={t('Move {{country}}', { country: primary.label })}
-                                            aria-label={t('Move {{country}}', { country: primary.label })}
-                                        >
-                                            A
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className={dragTarget === 'secondary' ? 'active secondary-btn' : 'secondary-btn'}
-                                            onClick={() => setDragTarget('secondary')}
-                                            title={t('Move {{country}}', { country: secondary.label })}
-                                            aria-label={t('Move {{country}}', { country: secondary.label })}
-                                        >
-                                            B
-                                        </button>
-                                    </div>
                                     <button
                                         type="button"
                                         className="expand-btn"
@@ -942,56 +900,16 @@ export const CountrySizeCompare = () => {
                                 </div>
                             </div>
                         </div>
-                        <div className={`map-stage${isDragging ? ' dragging' : ''}${dragTarget !== 'both' ? ' move-target' : ''}`}>
-                            <svg
-                                viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
-                                role="img"
-                                aria-label={t('Overlay of {{countryA}} and {{countryB}}', {
-                                    countryA: primary.label,
-                                    countryB: secondary.label,
-                                })}
-                                onPointerDown={handlePointerDown}
-                                onPointerMove={handlePointerMove}
-                                onPointerUp={handlePointerEnd}
-                                onPointerCancel={handlePointerEnd}
-                            >
-                                {overlay && (
-                                    <>
-                                        <path
-                                            className="map-path primary"
-                                            d={overlay.primaryPath}
-                                            transform={overlay.primaryTransform}
-                                        />
-                                        <path
-                                            className="map-path secondary"
-                                            d={overlay.secondaryPath}
-                                            transform={overlay.secondaryTransform}
-                                        />
-                                        {overlay.showSmallMarker && overlay.smallMarkerPos && (
-                                            <g className="small-country-marker">
-                                                <circle cx={overlay.smallMarkerPos.x} cy={overlay.smallMarkerPos.y} r={24} />
-                                                <circle cx={overlay.smallMarkerPos.x} cy={overlay.smallMarkerPos.y} r={4} className="marker-dot" />
-                                            </g>
-                                        )}
-                                    </>
-                                )}
-                            </svg>
+                        <div className={`map-stage${isDragging ? ' dragging' : ''}${dragTarget !== '__pan__' ? ' move-target' : ''}`}>
+                            {renderOverlaySvg('map-svg')}
                         </div>
-                        {overlay?.showSmallMarker && ratioData && (
-                            <button
-                                type="button"
-                                className="focus-smaller-btn"
-                                onClick={handleFocusSmaller}
-                            >
-                                {t('Focus on {{country}}', { country: ratioData.smaller.label })}
-                            </button>
-                        )}
                         <p className="map-footnote">
                             {t('Map data: Natural Earth 1:{{scale}}.', { scale: resolution })}
                         </p>
                         </motion.div>
                     )}
 
+                    {/* ─── AREA BLOCKS ─── */}
                     <motion.div
                         className="country-compare-blocks"
                         initial={{ y: 18, opacity: 0 }}
@@ -1003,93 +921,43 @@ export const CountrySizeCompare = () => {
                                 <h2>{t('Area blocks (official)')}</h2>
                                 <p>{t('Squares are sized by official total area.')}</p>
                             </div>
-                            <div className="map-legend">
-                                <span className="legend-item primary">
-                                    <span className="legend-dot" />
-                                    {primary.label}
-                                </span>
-                                <span className="legend-item secondary">
-                                    <span className="legend-dot" />
-                                    {secondary.label}
-                                </span>
-                            </div>
                         </div>
                         <div className="block-stage">
-                            <svg viewBox="0 0 900 345" role="img" aria-label={t('Area blocks (official)')}>
-                                {areaBlocks && (
-                                    <>
-                                        <rect
-                                            className="block-rect primary"
-                                            x={areaBlocks.primaryRect.x}
-                                            y={areaBlocks.primaryRect.y}
-                                            width={areaBlocks.primaryRect.width}
-                                            height={areaBlocks.primaryRect.height}
-                                        />
-                                        <text
-                                            className="block-label primary"
-                                            x={areaBlocks.primaryRect.x + areaBlocks.primaryRect.width / 2}
-                                            y={areaBlocks.primaryRect.y + areaBlocks.primaryRect.height + 18}
-                                            textAnchor="middle"
-                                        >
-                                            {primary.label}
-                                        </text>
-                                        <rect
-                                            className="block-rect secondary"
-                                            x={areaBlocks.secondaryRect.x}
-                                            y={areaBlocks.secondaryRect.y}
-                                            width={areaBlocks.secondaryRect.width}
-                                            height={areaBlocks.secondaryRect.height}
-                                        />
-                                        <text
-                                            className="block-label secondary"
-                                            x={areaBlocks.secondaryRect.x + areaBlocks.secondaryRect.width / 2}
-                                            y={areaBlocks.secondaryRect.y + areaBlocks.secondaryRect.height + 18}
-                                            textAnchor="middle"
-                                        >
-                                            {secondary.label}
-                                        </text>
-                                    </>
-                                )}
+                            <svg
+                                viewBox={`0 0 ${areaBlocks?.svgWidth ?? 900} ${areaBlocks?.svgHeight ?? 350}`}
+                                role="img"
+                                aria-label={t('Area blocks (official)')}
+                            >
+                                {areaBlocks && areaBlocks.rects.map(block => {
+                                    const color = ENTITY_COLORS[block.colorIndex];
+                                    return (
+                                        <g key={block.id}>
+                                            <rect
+                                                x={block.rect.x}
+                                                y={block.rect.y}
+                                                width={block.rect.width}
+                                                height={block.rect.height}
+                                                fill={color.fill}
+                                                stroke={color.stroke}
+                                                strokeWidth={2}
+                                            />
+                                            <text
+                                                x={block.rect.x + block.rect.width / 2}
+                                                y={block.rect.y + block.rect.height + 18}
+                                                textAnchor="middle"
+                                                fill={color.stroke}
+                                                className="block-label"
+                                            >
+                                                {block.label}
+                                            </text>
+                                        </g>
+                                    );
+                                })}
                             </svg>
-                        </div>
-                        <div className="block-diff">
-                            {primary && (
-                                <p>
-                                    {areaDifferences.primary
-                                        ? areaDifferences.primary.direction === 'smaller'
-                                            ? t('Map polygon is {{value}}% smaller than official area for {{country}}.', {
-                                                value: formatRatio(areaDifferences.primary.magnitude, i18n.language),
-                                                country: primary.label,
-                                            })
-                                            : t('Map polygon is {{value}}% larger than official area for {{country}}.', {
-                                                value: formatRatio(areaDifferences.primary.magnitude, i18n.language),
-                                                country: primary.label,
-                                            })
-                                        : t('Official area unavailable for {{country}}; using map polygon.', {
-                                            country: primary.label,
-                                        })}
-                                </p>
-                            )}
-                            {secondary && (
-                                <p>
-                                    {areaDifferences.secondary
-                                        ? areaDifferences.secondary.direction === 'smaller'
-                                            ? t('Map polygon is {{value}}% smaller than official area for {{country}}.', {
-                                                value: formatRatio(areaDifferences.secondary.magnitude, i18n.language),
-                                                country: secondary.label,
-                                            })
-                                            : t('Map polygon is {{value}}% larger than official area for {{country}}.', {
-                                                value: formatRatio(areaDifferences.secondary.magnitude, i18n.language),
-                                                country: secondary.label,
-                                            })
-                                        : t('Official area unavailable for {{country}}; using map polygon.', {
-                                            country: secondary.label,
-                                        })}
-                                </p>
-                            )}
                         </div>
                     </motion.div>
 
+                    {/* ─── RANKING ─── */}
                     <motion.div
                         className="country-compare-ranking"
                         initial={{ y: 16, opacity: 0 }}
@@ -1098,8 +966,8 @@ export const CountrySizeCompare = () => {
                     >
                         <div className="ranking-header">
                             <div className="map-title">
-                                <h2>{t('World area ranking')}</h2>
-                                <p>{t('Ranks use official total area.')}</p>
+                                <h2>{t('Area ranking')}</h2>
+                                <p>{t('Ranks use official total area when available.')}</p>
                             </div>
                             <button
                                 type="button"
@@ -1110,39 +978,48 @@ export const CountrySizeCompare = () => {
                             </button>
                         </div>
                         <div className="ranking-list">
-                            {rankingList.map((country, index) => {
-                                const rank = rankById.get(country.id) ?? index + 1;
-                                const isPrimary = primary?.id === country.id;
-                                const isSecondary = secondary?.id === country.id;
+                            {rankingList.map((entry, index) => {
+                                const rank = rankById.get(entry.id) ?? index + 1;
+                                const colorIdx = selectedColorMap.get(entry.id);
+                                const isSelected = colorIdx !== undefined;
+                                const color = isSelected ? ENTITY_COLORS[colorIdx] : null;
                                 return (
                                     <div
-                                        key={country.id}
-                                        className={`ranking-row${isPrimary ? ' primary' : ''}${isSecondary ? ' secondary' : ''}`}
+                                        key={entry.id}
+                                        className={`ranking-row${isSelected ? ' selected' : ''}`}
+                                        style={isSelected ? {
+                                            borderColor: color!.stroke,
+                                            boxShadow: `0 0 20px ${color!.fill}`,
+                                        } : undefined}
                                     >
                                         <span className="ranking-index mono">#{rank}</span>
-                                        <span className="ranking-name">{country.label}</span>
+                                        <span className="ranking-name">{entry.label}</span>
                                         <span className="ranking-area mono">
-                                            {formatArea(country.rankingAreaKm2, i18n.language)} {t('km²')}
+                                            {formatArea(entry.rankingAreaKm2, i18n.language)} {t('km²')}
                                         </span>
                                     </div>
                                 );
                             })}
-                            {pinnedCountries.length > 0 && (
+                            {pinnedEntries.length > 0 && (
                                 <>
                                     <div className="ranking-divider" />
-                                    {pinnedCountries.map((country) => {
-                                        const rank = rankById.get(country.id) ?? 0;
-                                        const isPrimary = primary?.id === country.id;
-                                        const isSecondary = secondary?.id === country.id;
+                                    {pinnedEntries.map(entry => {
+                                        const rank = rankById.get(entry.id) ?? 0;
+                                        const colorIdx = selectedColorMap.get(entry.id);
+                                        const color = colorIdx !== undefined ? ENTITY_COLORS[colorIdx] : null;
                                         return (
                                             <div
-                                                key={`pinned-${country.id}`}
-                                                className={`ranking-row pinned${isPrimary ? ' primary' : ''}${isSecondary ? ' secondary' : ''}`}
+                                                key={`pinned-${entry.id}`}
+                                                className="ranking-row pinned selected"
+                                                style={color ? {
+                                                    borderColor: color.stroke,
+                                                    boxShadow: `0 0 20px ${color.fill}`,
+                                                } : undefined}
                                             >
                                                 <span className="ranking-index mono">#{rank}</span>
-                                                <span className="ranking-name">{country.label}</span>
+                                                <span className="ranking-name">{entry.label}</span>
                                                 <span className="ranking-area mono">
-                                                    {formatArea(country.rankingAreaKm2, i18n.language)} {t('km²')}
+                                                    {formatArea(entry.rankingAreaKm2, i18n.language)} {t('km²')}
                                                 </span>
                                             </div>
                                         );
