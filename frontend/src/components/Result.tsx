@@ -25,24 +25,19 @@ export const Result = ({ answers, sharedScore, onRestart }: ResultProps) => {
 
     const isSharedResult = sharedScore !== undefined;
 
-    // Format score logic
-    let displayScore = score.toLocaleString(i18n.language, { maximumSignificantDigits: 4 });
+    const displayScore = useMemo(() => {
+        const clamped = Number.isFinite(score) ? Math.min(100, Math.max(0, score)) : 50;
 
-    // Handle extremely small numbers
-    if (score < 0.000001) {
-        displayScore = score.toExponential(3);
-    } else if (score < 0.0001) {
-        displayScore = "< 0.0001";
-    }
+        // World-rank tail values can saturate near zero; keep display human-readable.
+        if (clamped < 0.1) return '< 0.1';
+        if (clamped < 1) return clamped.toLocaleString(i18n.language, { maximumFractionDigits: 2 });
+        if (clamped < 10) return clamped.toLocaleString(i18n.language, { maximumFractionDigits: 1 });
+        return clamped.toLocaleString(i18n.language, { maximumFractionDigits: 0 });
+    }, [score, i18n.language]);
 
     const tierInfo = useMemo(() => getTierInfo(score), [score]);
     const tier = t(tierInfo.key);
     const tierColor = tierInfo.color;
-
-    const oneInPeople = useMemo(() => {
-        if (!Number.isFinite(score) || score <= 0) return null;
-        return Math.max(1, Math.round(100 / score));
-    }, [score]);
 
     // World population constant (2024 estimate)
     const WORLD_POPULATION = 8_000_000_000;
@@ -151,11 +146,8 @@ export const Result = ({ answers, sharedScore, onRestart }: ResultProps) => {
                     animate={{ opacity: 1 }}
                     transition={{ delay: 2.0 }}
                 >
-                    {oneInPeople !== null && peopleInGroup !== null && (
+                    {peopleInGroup !== null && (
                         <p style={{ fontSize: '1.1rem', fontWeight: '700', color: tierColor, margin: '0.5rem 0' }}>
-                            {t('That means you are 1 in')}{' '}
-                            <span className="mono">{oneInPeople.toLocaleString(i18n.language)}</span>{' '}
-                            {t('people.')}{' '}
                             {t('Out of 8 billion people, only')} <span className="mono">{peopleInGroup.toLocaleString(i18n.language)}</span> {t('are in this group.')}
                         </p>
                     )}

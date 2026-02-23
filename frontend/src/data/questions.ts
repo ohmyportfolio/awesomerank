@@ -21,9 +21,9 @@ export const questions: Question[] = [
     category: "Level 2: Connectivity (Information)",
   },
   {
-    id: "Can you read and write simple sentences?",
-    probability: 0.880,
-    category: "Level 1: Infrastructure (Survival)",
+    id: "Do you have a washing machine at home?",
+    probability: 0.400,
+    category: "Level 3: Assets (Comfort)",
   },
   {
     id: "Do you have a bank account or mobile money account?",

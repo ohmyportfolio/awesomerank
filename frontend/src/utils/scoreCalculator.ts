@@ -1,7 +1,8 @@
 import { questions, QUESTION_IDS } from '../data/questions';
 import { WORLD_RANK_CALIBRATION } from '../data/worldRankCalibration';
 
-export const SCORE_ALGO_VERSION = 'v3-irt-empirical-cdf';
+export const SCORE_ALGO_VERSION = 'v4-2pl-empirical-cdf-optimistic-v1';
+const UX_OPTIMISM_MAX_POINTS = 5;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -11,16 +12,22 @@ const sigmoid = (x: number) => 1 / (1 + Math.exp(-x));
 
 const logit = (p: number) => Math.log(p / (1 - p));
 
-const fallbackDifficulties = questions.map((q) => -logit(q.probability));
+const fallbackDiscriminations = questions.map((q) => clamp(0.75 + 0.5 * Math.abs(logit(q.probability)), 0.75, 2.25));
+const fallbackDifficulties = questions.map((q, idx) => -logit(q.probability) / fallbackDiscriminations[idx]);
 
 const hasCalibration =
   WORLD_RANK_CALIBRATION.questionIds.length === QUESTION_IDS.length &&
   WORLD_RANK_CALIBRATION.questionIds.every((id, idx) => id === QUESTION_IDS[idx]) &&
+  WORLD_RANK_CALIBRATION.discriminations.length === QUESTION_IDS.length &&
+  WORLD_RANK_CALIBRATION.difficulties.length === QUESTION_IDS.length &&
   WORLD_RANK_CALIBRATION.thetaQuantiles.length > 1;
 
 const difficulties = hasCalibration
   ? WORLD_RANK_CALIBRATION.difficulties
   : fallbackDifficulties;
+const discriminations = hasCalibration
+  ? WORLD_RANK_CALIBRATION.discriminations
+  : fallbackDiscriminations;
 
 function erf(x: number) {
   const sign = x >= 0 ? 1 : -1;
@@ -77,6 +84,14 @@ function percentileFromTheta(theta: number): number {
   return clamp(p0 + frac * step, 0, 100);
 }
 
+function applyOptimisticScoreAdjustment(rawScore: number): number {
+  const clampedRaw = clamp(rawScore, 0, 100);
+  const normalized = clampedRaw / 100;
+  // Slightly improve harsher high-score outcomes while preserving ordering.
+  const adjustment = UX_OPTIMISM_MAX_POINTS * normalized * normalized;
+  return clamp(clampedRaw - adjustment, 0, 100);
+}
+
 export interface TierInfo {
   key: string;
   color: string;
@@ -105,10 +120,11 @@ function estimateThetaMap(answers: boolean[]) {
     let hess = -1;
 
     for (let i = 0; i < n; i += 1) {
-      const pYes = sigmoid(theta - difficulties[i]);
+      const a = discriminations[i];
+      const pYes = sigmoid(a * (theta - difficulties[i]));
       const y = answers[i] ? 1 : 0;
-      grad += y - pYes;
-      hess += -pYes * (1 - pYes);
+      grad += a * (y - pYes);
+      hess += -(a * a) * pYes * (1 - pYes);
     }
 
     const step = grad / hess;
@@ -129,7 +145,8 @@ export interface ScoreResult {
 export function calculateScore(answers: boolean[]): ScoreResult {
   const theta = estimateThetaMap(answers);
   const percentile = percentileFromTheta(theta);
-  const score = clamp(100 - percentile, 0, 100);
+  const rawScore = clamp(100 - percentile, 0, 100);
+  const score = applyOptimisticScoreAdjustment(rawScore);
 
   const tier = getTierInfo(score).key;
   const yesCount = answers.filter(Boolean).length;

@@ -34,13 +34,43 @@ interface Summary {
   byLanguage: { selected_language: string; count: number }[];
 }
 
+interface IncomePercentiles {
+  p50: number | null;
+  p75: number | null;
+  p90: number | null;
+  p99: number | null;
+}
+
+interface IncomeSummary {
+  totalResponses: number;
+  validResponses: number;
+  byBasis: { basis: 'PPP' | 'MER'; count: number }[];
+  incomeUsdPercentiles: IncomePercentiles;
+  topPercentBands: { band: string; count: number }[];
+  topCountries: { countryCode: string; count: number }[];
+  recentResponses: Array<{
+    id: number;
+    timestamp: string;
+    countryCode: string | null;
+    basis: 'PPP' | 'MER' | null;
+    incomeAnnualUsd: number | null;
+    topPercent: number | null;
+    conversionSource: string | null;
+    conversionDate: string | null;
+    effectiveIncomeYear: number | null;
+    payloadValid: boolean;
+    payloadError: string | null;
+  }>;
+}
+
 export const AdminDashboard = () => {
   const { t, i18n } = useTranslation();
   const [responses, setResponses] = useState<Response[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [incomeSummary, setIncomeSummary] = useState<IncomeSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'summary' | 'responses'>('summary');
+  const [activeTab, setActiveTab] = useState<'summary' | 'responses' | 'income'>('summary');
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
 
   const apiBase = import.meta.env.PROD ? '' : 'http://localhost:3000';
@@ -53,20 +83,23 @@ export const AdminDashboard = () => {
     setLoading(true);
     setError(null);
     try {
-      const [statsRes, summaryRes] = await Promise.all([
+      const [statsRes, summaryRes, incomeSummaryRes] = await Promise.all([
         fetch(`${apiBase}/api/stats`),
-        fetch(`${apiBase}/api/stats/summary`)
+        fetch(`${apiBase}/api/stats/summary`),
+        fetch(`${apiBase}/api/stats/income-summary`)
       ]);
 
-      if (!statsRes.ok || !summaryRes.ok) {
+      if (!statsRes.ok || !summaryRes.ok || !incomeSummaryRes.ok) {
         throw new Error(t('API request failed'));
       }
 
       const statsData = await statsRes.json();
       const summaryData = await summaryRes.json();
+      const incomeSummaryData = await incomeSummaryRes.json();
 
       setResponses(statsData.responses || []);
       setSummary(summaryData);
+      setIncomeSummary(incomeSummaryData);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Failed to load data'));
     } finally {
@@ -101,6 +134,15 @@ export const AdminDashboard = () => {
     } catch {
       return [];
     }
+  };
+
+  const formatUsd = (value: number | null | undefined) => {
+    if (value === null || value === undefined || !Number.isFinite(value)) return '-';
+    return new Intl.NumberFormat(i18n.language, {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: 0,
+    }).format(value);
   };
 
   if (loading) {
@@ -143,6 +185,12 @@ export const AdminDashboard = () => {
           onClick={() => setActiveTab('responses')}
         >
           {t('Responses ({{count}})', { count: summary?.totalResponses || 0 })}
+        </button>
+        <button
+          className={`tab-btn ${activeTab === 'income' ? 'active' : ''}`}
+          onClick={() => setActiveTab('income')}
+        >
+          {t('Income rank ({{count}})', { count: incomeSummary?.totalResponses || 0 })}
         </button>
       </div>
 
@@ -300,6 +348,119 @@ export const AdminDashboard = () => {
           {responses.length === 0 && (
             <div className="no-data">{t('No response data yet.')}</div>
           )}
+        </div>
+      )}
+
+      {activeTab === 'income' && incomeSummary && (
+        <div className="admin-summary">
+          <div className="summary-grid">
+            <div className="summary-card">
+              <h3>{t('Income rank responses')}</h3>
+              <p className="big-number">{incomeSummary.totalResponses.toLocaleString(i18n.language)}</p>
+            </div>
+            <div className="summary-card">
+              <h3>{t('Valid payloads')}</h3>
+              <p className="big-number">{incomeSummary.validResponses.toLocaleString(i18n.language)}</p>
+            </div>
+          </div>
+
+          <div className="summary-grid">
+            <div className="summary-card">
+              <h3>{t('By basis')}</h3>
+              <ul className="stat-list">
+                {incomeSummary.byBasis.map((item) => (
+                  <li key={item.basis}>
+                    <span className="stat-label">{item.basis}</span>
+                    <span className="stat-value">{item.count.toLocaleString(i18n.language)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="summary-card">
+              <h3>{t('Income percentiles (USD)')}</h3>
+              <ul className="stat-list">
+                <li>
+                  <span className="stat-label">P50</span>
+                  <span className="stat-value">{formatUsd(incomeSummary.incomeUsdPercentiles.p50)}</span>
+                </li>
+                <li>
+                  <span className="stat-label">P75</span>
+                  <span className="stat-value">{formatUsd(incomeSummary.incomeUsdPercentiles.p75)}</span>
+                </li>
+                <li>
+                  <span className="stat-label">P90</span>
+                  <span className="stat-value">{formatUsd(incomeSummary.incomeUsdPercentiles.p90)}</span>
+                </li>
+                <li>
+                  <span className="stat-label">P99</span>
+                  <span className="stat-value">{formatUsd(incomeSummary.incomeUsdPercentiles.p99)}</span>
+                </li>
+              </ul>
+            </div>
+
+            <div className="summary-card">
+              <h3>{t('Top percent bands')}</h3>
+              <ul className="stat-list">
+                {incomeSummary.topPercentBands.map((item) => (
+                  <li key={item.band}>
+                    <span className="stat-label">{item.band}</span>
+                    <span className="stat-value">{item.count.toLocaleString(i18n.language)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="summary-card">
+              <h3>{t('Top countries')}</h3>
+              <ul className="stat-list">
+                {incomeSummary.topCountries.map((item) => (
+                  <li key={item.countryCode}>
+                    <span className="stat-label">{item.countryCode}</span>
+                    <span className="stat-value">{item.count.toLocaleString(i18n.language)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          <div className="admin-responses">
+            <div className="table-container">
+              <table className="responses-table">
+                <thead>
+                  <tr>
+                    <th>{t('ID')}</th>
+                    <th>{t('Time')}</th>
+                    <th>{t('Country')}</th>
+                    <th>{t('Income basis')}</th>
+                    <th>{t('Your income')}</th>
+                    <th>{t('You are in the top')}</th>
+                    <th>{t('Income year')}</th>
+                    <th>{t('Data source')}</th>
+                    <th>{t('Status')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {incomeSummary.recentResponses.map((response) => (
+                    <tr key={response.id}>
+                      <td>{response.id}</td>
+                      <td>{formatDate(response.timestamp)}</td>
+                      <td>{response.countryCode || '-'}</td>
+                      <td>{response.basis || '-'}</td>
+                      <td>{formatUsd(response.incomeAnnualUsd)}</td>
+                      <td>{response.topPercent === null || response.topPercent === undefined ? '-' : `${response.topPercent.toFixed(2)}%`}</td>
+                      <td>{response.effectiveIncomeYear || '-'}</td>
+                      <td>{response.conversionSource || '-'}</td>
+                      <td>{response.payloadValid ? t('YES') : t('NO')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {incomeSummary.recentResponses.length === 0 && (
+              <div className="no-data">{t('No response data yet.')}</div>
+            )}
+          </div>
         </div>
       )}
     </div>

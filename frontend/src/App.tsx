@@ -302,7 +302,7 @@ function AppContent() {
     setAnswers([]);
     setDemographics(null);
     startTimeRef.current = Date.now();
-    navigate('home', withLang('/'));
+    navigate('landing', withLang('/world-rank'));
   };
 
   const showBack = view !== 'home' && view !== 'admin';

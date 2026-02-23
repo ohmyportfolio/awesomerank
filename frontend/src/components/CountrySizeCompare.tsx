@@ -33,28 +33,10 @@ const RANKING_LIMIT = 20;
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
 const NAME_KEY_BY_LANGUAGE: Record<string, string> = {
-    ar: 'NAME_AR',
-    de: 'NAME_DE',
-    el: 'NAME_EL',
     en: 'NAME_EN',
-    es: 'NAME_ES',
-    fa: 'NAME_FA',
-    fr: 'NAME_FR',
-    he: 'NAME_HE',
-    hi: 'NAME_HI',
-    hu: 'NAME_HU',
-    id: 'NAME_ID',
-    it: 'NAME_IT',
-    ja: 'NAME_JA',
     ko: 'NAME_KO',
-    nl: 'NAME_NL',
-    pl: 'NAME_PL',
+    es: 'NAME_ES',
     pt: 'NAME_PT',
-    ru: 'NAME_RU',
-    sv: 'NAME_SV',
-    tr: 'NAME_TR',
-    vi: 'NAME_VI',
-    zh: 'NAME_ZH',
 };
 
 const getLocalizedName = (properties: CountryFeature['properties'], language: string, fallbackLabel: string) => {
@@ -88,6 +70,7 @@ export const CountrySizeCompare = () => {
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [resolution, setResolution] = useState<'110m' | '10m'>('110m');
     const [showAllRanks, setShowAllRanks] = useState(false);
+    const [showOptions, setShowOptions] = useState(false);
     const dragStateRef = useRef<{
         startX: number;
         startY: number;
@@ -185,8 +168,8 @@ export const CountrySizeCompare = () => {
         const smallerArea = Math.max(1, Math.min(primaryArea, secondaryArea));
         const areaRatio = biggerArea / smallerArea;
         const sizeRatio = Math.sqrt(areaRatio);
-        const boost = Math.log10(sizeRatio) * 0.6;
-        return clamp(1 + boost, 0.9, 2.2);
+        const boost = Math.log10(sizeRatio) * 1.2 + (sizeRatio > 5 ? Math.log2(sizeRatio) * 0.3 : 0);
+        return clamp(1 + boost, 0.9, 6);
     }, [primary, secondary]);
 
     useEffect(() => {
@@ -252,6 +235,22 @@ export const CountrySizeCompare = () => {
 
         const baseTranslate = `translate(${VIEWBOX_WIDTH / 2 + pan.x}, ${VIEWBOX_HEIGHT / 2 + pan.y}) scale(${scaled})`;
 
+        const primaryAreaVal = primary.officialAreaKm2 ?? primary.areaKm2;
+        const secondaryAreaVal = secondary.officialAreaKm2 ?? secondary.areaKm2;
+        const smallerIsPrimary = primaryAreaVal < secondaryAreaVal;
+        const areaRatioOverlay = Math.max(primaryAreaVal, secondaryAreaVal) / Math.max(1, Math.min(primaryAreaVal, secondaryAreaVal));
+        const showSmallMarker = areaRatioOverlay > 8;
+
+        let smallMarkerPos: { x: number; y: number } | null = null;
+        if (showSmallMarker) {
+            const smallCenter = smallerIsPrimary ? primaryCenter : secondaryCenter;
+            const smallOffset = smallerIsPrimary ? primaryOffset : secondaryOffset;
+            smallMarkerPos = {
+                x: VIEWBOX_WIDTH / 2 + pan.x + (smallOffset.x - smallCenter[0] + smallCenter[0]) * scaled - smallCenter[0] * scaled,
+                y: VIEWBOX_HEIGHT / 2 + pan.y + (smallOffset.y - smallCenter[1] + smallCenter[1]) * scaled - smallCenter[1] * scaled,
+            };
+        }
+
         return {
             primaryPath,
             secondaryPath,
@@ -262,6 +261,9 @@ export const CountrySizeCompare = () => {
             primaryCenter,
             secondaryCenter,
             scaled,
+            showSmallMarker,
+            smallMarkerPos,
+            smallerIsPrimary,
         };
     }, [primary, secondary, zoom, pan, primaryOffset, secondaryOffset]);
 
@@ -356,6 +358,22 @@ export const CountrySizeCompare = () => {
             y: prev.y * ratio,
         }));
         setZoom(nextZoom);
+    };
+
+    const handleFocusSmaller = () => {
+        if (!overlay || !ratioData) return;
+        const smallerIsPrimary = ratioData.smaller.id === primary?.id;
+        const bounds = smallerIsPrimary ? overlay.primaryBounds : overlay.secondaryBounds;
+        const center = smallerIsPrimary ? overlay.primaryCenter : overlay.secondaryCenter;
+        const offset = smallerIsPrimary ? primaryOffset : secondaryOffset;
+        const w = bounds[1][0] - bounds[0][0];
+        const h = bounds[1][1] - bounds[0][1];
+        const baseScale = Math.min((VIEWBOX_WIDTH * 0.82) / Math.max(w, 1), (VIEWBOX_HEIGHT * 0.82) / Math.max(h, 1));
+        const targetZoom = clamp(baseScale * 0.7, MIN_ZOOM, MAX_ZOOM);
+        const cx = (offset.x - center[0] + center[0]) * baseScale;
+        const cy = (offset.y - center[1] + center[1]) * baseScale;
+        setZoom(targetZoom);
+        setPan({ x: -cx * (targetZoom / baseScale), y: -cy * (targetZoom / baseScale) });
     };
 
     const handlePointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -527,6 +545,13 @@ export const CountrySizeCompare = () => {
     const secondaryAreaDisplay = secondary ? (secondary.officialAreaKm2 ?? secondary.areaKm2) : null;
     const primaryRank = primary ? rankById.get(primary.id) ?? null : null;
     const secondaryRank = secondary ? rankById.get(secondary.id) ?? null : null;
+    const pinnedCountries = useMemo(() => {
+        if (showAllRanks || !primary || !secondary) return [];
+        const topIds = new Set(rankedCountries.slice(0, RANKING_LIMIT).map((c) => c.id));
+        return rankedCountries.filter(
+            (c) => (c.id === primary.id || c.id === secondary.id) && !topIds.has(c.id),
+        );
+    }, [showAllRanks, rankedCountries, primary, secondary]);
     const rankingList = showAllRanks ? rankedCountries : rankedCountries.slice(0, RANKING_LIMIT);
 
     return (
@@ -597,7 +622,14 @@ export const CountrySizeCompare = () => {
                 </div>
             </div>
 
-            <div className="country-compare-options">
+            <button
+                className="mobile-options-toggle"
+                onClick={() => setShowOptions((v) => !v)}
+                aria-expanded={showOptions}
+            >
+                {showOptions ? t('Hide options') : t('Options')}
+            </button>
+            <div className={`country-compare-options${showOptions ? ' show' : ''}`}>
                 <div className="country-compare-select">
                     <label htmlFor="map-resolution">{t('Map detail')}</label>
                     <select
@@ -629,7 +661,7 @@ export const CountrySizeCompare = () => {
                             <span className="stat-label">{t('Area')}</span>
                             <h3>{primary.label}</h3>
                             <p className="stat-value mono">
-                                {primaryAreaDisplay ? formatArea(primaryAreaDisplay, i18n.language) : '--'} {t('km^2')}
+                                {primaryAreaDisplay ? formatArea(primaryAreaDisplay, i18n.language) : '--'} {t('km²')}
                             </p>
                             <p className="stat-rank">
                                 {primaryRank ? t('Rank #{{rank}}', { rank: primaryRank }) : t('Rank unavailable')}
@@ -639,7 +671,7 @@ export const CountrySizeCompare = () => {
                             <span className="stat-label">{t('Area')}</span>
                             <h3>{secondary.label}</h3>
                             <p className="stat-value mono">
-                                {secondaryAreaDisplay ? formatArea(secondaryAreaDisplay, i18n.language) : '--'} {t('km^2')}
+                                {secondaryAreaDisplay ? formatArea(secondaryAreaDisplay, i18n.language) : '--'} {t('km²')}
                             </p>
                             <p className="stat-rank">
                                 {secondaryRank ? t('Rank #{{rank}}', { rank: secondaryRank }) : t('Rank unavailable')}
@@ -664,7 +696,13 @@ export const CountrySizeCompare = () => {
                     </div>
 
                     {isFullscreen && (
-                        <div className="compare-fullscreen">
+                        <motion.div
+                            className="compare-fullscreen"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.25 }}
+                        >
                             <div className={`fullscreen-map-stage${isDragging ? ' dragging' : ''}`}>
                                 <svg
                                     viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
@@ -690,6 +728,12 @@ export const CountrySizeCompare = () => {
                                                 d={overlay.secondaryPath}
                                                 transform={overlay.secondaryTransform}
                                             />
+                                            {overlay.showSmallMarker && overlay.smallMarkerPos && (
+                                                <g className="small-country-marker">
+                                                    <circle cx={overlay.smallMarkerPos.x} cy={overlay.smallMarkerPos.y} r={24} />
+                                                    <circle cx={overlay.smallMarkerPos.x} cy={overlay.smallMarkerPos.y} r={4} className="marker-dot" />
+                                                </g>
+                                            )}
                                         </>
                                     )}
                                 </svg>
@@ -798,7 +842,7 @@ export const CountrySizeCompare = () => {
                                     </div>
                                 </div>
                             </div>
-                        </div>
+                        </motion.div>
                     )}
 
                     {!isFullscreen && (
@@ -855,20 +899,22 @@ export const CountrySizeCompare = () => {
                                     </div>
                                 </div>
                                 <div className="toolbar-row">
-                                    <div className="map-move-compact" role="group">
+                                    <div className="map-move-compact" role="group" aria-label={t('Drag mode')}>
                                         <button
                                             type="button"
                                             className={dragTarget === 'both' ? 'active' : ''}
                                             onClick={() => setDragTarget('both')}
                                             title={t('Pan view')}
+                                            aria-label={t('Pan view')}
                                         >
-                                            ⊞
+                                            ✋
                                         </button>
                                         <button
                                             type="button"
                                             className={dragTarget === 'primary' ? 'active primary-btn' : 'primary-btn'}
                                             onClick={() => setDragTarget('primary')}
-                                            title={primary.label}
+                                            title={t('Move {{country}}', { country: primary.label })}
+                                            aria-label={t('Move {{country}}', { country: primary.label })}
                                         >
                                             A
                                         </button>
@@ -876,7 +922,8 @@ export const CountrySizeCompare = () => {
                                             type="button"
                                             className={dragTarget === 'secondary' ? 'active secondary-btn' : 'secondary-btn'}
                                             onClick={() => setDragTarget('secondary')}
-                                            title={secondary.label}
+                                            title={t('Move {{country}}', { country: secondary.label })}
+                                            aria-label={t('Move {{country}}', { country: secondary.label })}
                                         >
                                             B
                                         </button>
@@ -895,7 +942,7 @@ export const CountrySizeCompare = () => {
                                 </div>
                             </div>
                         </div>
-                        <div className={`map-stage${isDragging ? ' dragging' : ''}`}>
+                        <div className={`map-stage${isDragging ? ' dragging' : ''}${dragTarget !== 'both' ? ' move-target' : ''}`}>
                             <svg
                                 viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
                                 role="img"
@@ -920,10 +967,25 @@ export const CountrySizeCompare = () => {
                                             d={overlay.secondaryPath}
                                             transform={overlay.secondaryTransform}
                                         />
+                                        {overlay.showSmallMarker && overlay.smallMarkerPos && (
+                                            <g className="small-country-marker">
+                                                <circle cx={overlay.smallMarkerPos.x} cy={overlay.smallMarkerPos.y} r={24} />
+                                                <circle cx={overlay.smallMarkerPos.x} cy={overlay.smallMarkerPos.y} r={4} className="marker-dot" />
+                                            </g>
+                                        )}
                                     </>
                                 )}
                             </svg>
                         </div>
+                        {overlay?.showSmallMarker && ratioData && (
+                            <button
+                                type="button"
+                                className="focus-smaller-btn"
+                                onClick={handleFocusSmaller}
+                            >
+                                {t('Focus on {{country}}', { country: ratioData.smaller.label })}
+                            </button>
+                        )}
                         <p className="map-footnote">
                             {t('Map data: Natural Earth 1:{{scale}}.', { scale: resolution })}
                         </p>
@@ -953,7 +1015,7 @@ export const CountrySizeCompare = () => {
                             </div>
                         </div>
                         <div className="block-stage">
-                            <svg viewBox="0 0 900 320" role="img" aria-label={t('Area blocks (official)')}>
+                            <svg viewBox="0 0 900 345" role="img" aria-label={t('Area blocks (official)')}>
                                 {areaBlocks && (
                                     <>
                                         <rect
@@ -963,6 +1025,14 @@ export const CountrySizeCompare = () => {
                                             width={areaBlocks.primaryRect.width}
                                             height={areaBlocks.primaryRect.height}
                                         />
+                                        <text
+                                            className="block-label primary"
+                                            x={areaBlocks.primaryRect.x + areaBlocks.primaryRect.width / 2}
+                                            y={areaBlocks.primaryRect.y + areaBlocks.primaryRect.height + 18}
+                                            textAnchor="middle"
+                                        >
+                                            {primary.label}
+                                        </text>
                                         <rect
                                             className="block-rect secondary"
                                             x={areaBlocks.secondaryRect.x}
@@ -970,6 +1040,14 @@ export const CountrySizeCompare = () => {
                                             width={areaBlocks.secondaryRect.width}
                                             height={areaBlocks.secondaryRect.height}
                                         />
+                                        <text
+                                            className="block-label secondary"
+                                            x={areaBlocks.secondaryRect.x + areaBlocks.secondaryRect.width / 2}
+                                            y={areaBlocks.secondaryRect.y + areaBlocks.secondaryRect.height + 18}
+                                            textAnchor="middle"
+                                        >
+                                            {secondary.label}
+                                        </text>
                                     </>
                                 )}
                             </svg>
@@ -1044,11 +1122,33 @@ export const CountrySizeCompare = () => {
                                         <span className="ranking-index mono">#{rank}</span>
                                         <span className="ranking-name">{country.label}</span>
                                         <span className="ranking-area mono">
-                                            {formatArea(country.rankingAreaKm2, i18n.language)} {t('km^2')}
+                                            {formatArea(country.rankingAreaKm2, i18n.language)} {t('km²')}
                                         </span>
                                     </div>
                                 );
                             })}
+                            {pinnedCountries.length > 0 && (
+                                <>
+                                    <div className="ranking-divider" />
+                                    {pinnedCountries.map((country) => {
+                                        const rank = rankById.get(country.id) ?? 0;
+                                        const isPrimary = primary?.id === country.id;
+                                        const isSecondary = secondary?.id === country.id;
+                                        return (
+                                            <div
+                                                key={`pinned-${country.id}`}
+                                                className={`ranking-row pinned${isPrimary ? ' primary' : ''}${isSecondary ? ' secondary' : ''}`}
+                                            >
+                                                <span className="ranking-index mono">#{rank}</span>
+                                                <span className="ranking-name">{country.label}</span>
+                                                <span className="ranking-area mono">
+                                                    {formatArea(country.rankingAreaKm2, i18n.language)} {t('km²')}
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
+                                </>
+                            )}
                         </div>
                     </motion.div>
                 </>

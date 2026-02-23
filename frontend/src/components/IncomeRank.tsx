@@ -16,6 +16,7 @@ import './IncomeRank.css';
 
 // World population constant (2024 estimate)
 const WORLD_POPULATION = 8_000_000_000;
+const EFFECTIVE_INCOME_YEAR = WORLD_INCOME_WID.year;
 const COUNTRY_FALLBACK = 'US';
 
 const COUNTRY_LIST = COUNTRY_CURRENCY;
@@ -221,7 +222,7 @@ export function IncomeRank() {
     source: null,
   });
   const [pppFallbackToUsd, setPppFallbackToUsd] = useState(false);
-  const [incomeYear, setIncomeYear] = useState(urlParams.year ?? String(WORLD_INCOME_WID.year));
+  const [pppFallbackConfirmed, setPppFallbackConfirmed] = useState(false);
   const [submittedIncome, setSubmittedIncome] = useState<number | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
   const [showCopied, setShowCopied] = useState(false);
@@ -252,6 +253,7 @@ export function IncomeRank() {
   useEffect(() => {
     if (basis !== 'PPP' && pppFallbackToUsd) {
       setPppFallbackToUsd(false);
+      setPppFallbackConfirmed(false);
     }
   }, [basis, pppFallbackToUsd]);
 
@@ -259,6 +261,7 @@ export function IncomeRank() {
     if (!countryCode) return;
     if (prevCountryRef.current && prevCountryRef.current !== countryCode) {
       setPppFallbackToUsd(false);
+      setPppFallbackConfirmed(false);
     }
     prevCountryRef.current = countryCode;
   }, [countryCode]);
@@ -334,13 +337,15 @@ export function IncomeRank() {
   useEffect(() => {
     if (!autoSubmitRef.current) return;
     if (convertedIncomeUsd === null || conversionStatus !== 'success') return;
+    if (pppFallbackToUsd && !pppFallbackConfirmed) return;
     autoSubmitRef.current = false;
     setSubmittedIncome(convertedIncomeUsd);
-  }, [convertedIncomeUsd, conversionStatus]);
-  const parsedIncomeYear = useMemo(() => {
-    const year = Number.parseInt(incomeYear.trim(), 10);
+  }, [convertedIncomeUsd, conversionStatus, pppFallbackToUsd, pppFallbackConfirmed]);
+  const parsedIncomeYearInput = useMemo(() => {
+    if (!urlParams.year) return null;
+    const year = Number.parseInt(urlParams.year.trim(), 10);
     return Number.isFinite(year) ? year : null;
-  }, [incomeYear]);
+  }, [urlParams.year]);
 
   const percentile = useMemo(
     () => (submittedIncome === null ? null : percentileFromIncome(submittedIncome, thresholds)),
@@ -579,13 +584,7 @@ export function IncomeRank() {
       setConversionStatus('error');
       setConversionMeta({ date: null, source: null });
       setPppFallbackToUsd(false);
-      return;
-    }
-    if (!incomeYear.trim()) {
-      setConversionText('');
-      setConversionStatus('error');
-      setConversionMeta({ date: null, source: null });
-      setPppFallbackToUsd(false);
+      setPppFallbackConfirmed(false);
       return;
     }
 
@@ -602,10 +601,11 @@ export function IncomeRank() {
     const run = async () => {
       try {
         if (basis === 'PPP') {
-          const result = await fetchPPPConversion(countryCode.toLowerCase(), incomeYear);
+          const result = await fetchPPPConversion(countryCode.toLowerCase(), String(EFFECTIVE_INCOME_YEAR));
           if (!result) {
             if (!isActive) return;
             setPppFallbackToUsd(true);
+            setPppFallbackConfirmed(false);
             setCurrencyCode('USD');
             setCurrencyLocked(true);
             setConversionText('1');
@@ -618,22 +618,25 @@ export function IncomeRank() {
           setConversionMeta({ date: result.date || null, source: 'PPP' });
           setConversionStatus('success');
           setPppFallbackToUsd(false);
+          setPppFallbackConfirmed(false);
           return;
         }
 
-        const result = await fetchMerRate(normalizedCurrency, incomeYear);
+        const result = await fetchMerRate(normalizedCurrency, String(EFFECTIVE_INCOME_YEAR));
         if (!result) throw new Error('MER unavailable');
         if (!isActive) return;
         setConversionText(String(result.value));
         setConversionMeta({ date: result.date || null, source: 'MER' });
         setConversionStatus('success');
         setPppFallbackToUsd(false);
-      } catch (error) {
+        setPppFallbackConfirmed(false);
+      } catch {
         if (!isActive) return;
         setConversionText('');
         setConversionStatus('error');
         setConversionMeta({ date: null, source: null });
         setPppFallbackToUsd(false);
+        setPppFallbackConfirmed(false);
       }
     };
 
@@ -641,7 +644,7 @@ export function IncomeRank() {
     return () => {
       isActive = false;
     };
-  }, [basis, countryCode, incomeYear, normalizedCurrency, conversionLocked]);
+  }, [basis, countryCode, normalizedCurrency, conversionLocked, pppFallbackToUsd]);
 
   const handleCurrencyToggle = () => {
     if (currencyLocked) {
@@ -670,6 +673,7 @@ export function IncomeRank() {
   };
 
   const handleCheck = () => {
+    if (pppFallbackToUsd && !pppFallbackConfirmed) return;
     if (convertedIncomeUsd === null) return;
 
     MatomoEvents.incomeCalculated(basis);
@@ -724,7 +728,8 @@ export function IncomeRank() {
         equivalenceScale,
         currencyCode: normalizedCurrency || null,
         countryCode: countryCode === 'OTHER' ? null : countryCode,
-        incomeYear: parsedIncomeYear,
+        incomeYearInput: parsedIncomeYearInput,
+        effectiveIncomeYear: EFFECTIVE_INCOME_YEAR,
         conversionFactor: effectiveConversion,
         conversionSource: conversionMeta.source,
         conversionDate: conversionMeta.date,
@@ -759,7 +764,7 @@ export function IncomeRank() {
     if (parsedChildren !== null) params.set('children', String(parsedChildren));
     if (countryCode) params.set('country', countryCode);
     if (normalizedCurrency) params.set('currency', normalizedCurrency);
-    if (incomeYear) params.set('year', incomeYear);
+    params.set('year', String(EFFECTIVE_INCOME_YEAR));
     params.set('basis', basis);
     const shareUrl = `${baseUrl}?${params.toString()}`;
 
@@ -792,11 +797,18 @@ export function IncomeRank() {
   const conversionLabel = basis === 'PPP'
     ? t('PPP conversion factor (local currency per international $)')
     : t('Exchange rate (local currency per USD)');
-  const canCalculate = convertedIncomeUsd !== null;
+  const canCalculate = convertedIncomeUsd !== null && (!pppFallbackToUsd || pppFallbackConfirmed);
   const isConversionLoading = conversionLocked && conversionStatus === 'loading';
   const basisHelp = basis === 'PPP'
     ? t('PPP adjusts for cost of living and is best for comparing living standards across countries.')
     : t('MER uses market exchange rates. Useful for nominal comparisons but can swing with currency markets.');
+  const conversionSourceLabel = pppFallbackToUsd
+    ? t('USD')
+    : conversionMeta.source === 'PPP'
+      ? t('PPP')
+      : conversionMeta.source === 'MER'
+        ? t('Market exchange rate (MER)')
+        : t('Unknown');
   // These are available for future use if needed
   void WORLD_INCOME_WID.countryCodeByBasis[basis];
   void WORLD_INCOME_WID.sourceFileByBasis[basis];
@@ -1021,17 +1033,13 @@ export function IncomeRank() {
                 <input
                   id="income-year-input"
                   className="income-input income-input-compact"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  maxLength={4}
-                  placeholder={String(WORLD_INCOME_WID.year)}
-                  value={incomeYear}
-                  onChange={(e) => setIncomeYear(e.target.value.replace(/[^\d]/g, '').slice(0, 4))}
-                  onKeyDown={handleKeyDown}
+                  value={String(EFFECTIVE_INCOME_YEAR)}
+                  disabled
+                  readOnly
                   aria-label={t('Income year')}
                 />
               </div>
-              <div className="income-helper">{t('Use the year your income is based on.')}</div>
+              <div className="income-helper">{t('Income year is fixed to match WID thresholds.')}</div>
             </div>
             <div className="income-field">
               <label className="income-label" htmlFor="conversion-input">
@@ -1075,6 +1083,15 @@ export function IncomeRank() {
                     onClick={handleConversionToggle}
                   >
                     {conversionLocked ? t('Edit conversion') : t('Use auto conversion')}
+                  </button>
+                )}
+                {pppFallbackToUsd && !pppFallbackConfirmed && (
+                  <button
+                    type="button"
+                    className="income-link-btn"
+                    onClick={() => setPppFallbackConfirmed(true)}
+                  >
+                    {t('Continue to income input')}
                   </button>
                 )}
               </div>
@@ -1191,6 +1208,10 @@ export function IncomeRank() {
                         ? t('MER results can change with exchange rates.')
                         : t('PPP reflects cost of living differences.')}
                       {basis === 'PPP' ? ` ${t('PPP ranking reflects living standards, not raw income.')}` : ''}
+                    </p>
+                    <p className="result-note">
+                      {t('Income year')}: {EFFECTIVE_INCOME_YEAR} · {t('Data source')}: {conversionSourceLabel}
+                      {conversionMeta.date ? ` · ${t('Updated {{date}}', { date: conversionMeta.date })}` : ''}
                     </p>
                   </div>
                     <div className="result-stamp" aria-label={t('Living standard result')}>

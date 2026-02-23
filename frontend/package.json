@@ -9,7 +9,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "i18n:parse": "i18next --config i18next-parser.config.cjs",
-    "sitemap:generate": "node ./scripts/generate-sitemap.mjs"
+    "sitemap:generate": "node ./scripts/generate-sitemap.mjs",
+    "data:generate-income-thresholds": "python3 ./scripts/generate_world_income_thresholds.py",
+    "data:check": "node ./scripts/validate_data_integrity.mjs"
   },
   "dependencies": {
     "classnames": "^2.5.1",

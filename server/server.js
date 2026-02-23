@@ -82,12 +82,12 @@ const ROUTE_META = {
   },
   '/world-rank': {
     title: 'World Rank — Global Lifestyle Quiz',
-    description: 'Answer a short lifestyle quiz to see where you stand among 8 billion people worldwide.',
+    description: 'Answer a 15-question lifestyle quiz for a modeled estimate of where you stand among 8 billion people worldwide.',
     heading: 'World Rank',
     subheading: 'A lifestyle quiz that estimates your global standing across everyday living standards.',
     keywords: 'world rank, lifestyle quiz, global ranking, living standards, world percentile, global lifestyle index',
     highlights: [
-      '20+ lifestyle questions',
+      '15 lifestyle questions',
       'Instant global ranking estimate',
       'Private, on-device calculation',
     ],
@@ -352,7 +352,7 @@ function buildJsonLd(meta, canonicalUrl) {
       priceCurrency: 'USD',
     },
     featureList: [
-      'Global lifestyle ranking quiz with 20+ questions',
+      'Global lifestyle ranking quiz with 15 questions',
       'Income percentile calculator (PPP and MER basis)',
       '4 language support',
       'On-device calculation for privacy',
@@ -391,7 +391,7 @@ function renderSeoHtml(req) {
       dynamicMeta = {
         ...dynamicMeta,
         title: `Top ${formatted}% — World Rank Result`,
-        description: `This World Rank result places you in the top ${formatted}% globally. Compare your lifestyle against the world.`,
+        description: `This World Rank result is a modeled estimate placing you in the top ${formatted}% globally.`,
       };
     }
   }
@@ -525,7 +525,9 @@ async function initDatabase() {
       referer TEXT,
 
       -- App-specific blob for non-quiz tools (JSON string)
-      app_payload TEXT
+      app_payload TEXT,
+      app_payload_valid INTEGER,
+      app_payload_error TEXT
     )
   `);
 
@@ -534,6 +536,8 @@ async function initDatabase() {
     country_code: 'TEXT',
     app_id: 'TEXT',
     app_payload: 'TEXT',
+    app_payload_valid: 'INTEGER',
+    app_payload_error: 'TEXT',
     quiz_version: 'TEXT',
     question_set_id: 'TEXT',
     score_algo_version: 'TEXT',
@@ -622,15 +626,98 @@ function getClientIP(req) {
     || '';
 }
 
+function normalizePayload(rawPayload) {
+  if (rawPayload === undefined || rawPayload === null) {
+    return { parsed: null, serialized: null, parseError: null };
+  }
+
+  if (typeof rawPayload === 'string') {
+    try {
+      return {
+        parsed: JSON.parse(rawPayload),
+        serialized: rawPayload,
+        parseError: null,
+      };
+    } catch {
+      return {
+        parsed: null,
+        serialized: rawPayload,
+        parseError: 'payload is not valid JSON',
+      };
+    }
+  }
+
+  if (rawPayload && typeof rawPayload === 'object') {
+    return {
+      parsed: rawPayload,
+      serialized: JSON.stringify(rawPayload),
+      parseError: null,
+    };
+  }
+
+  return {
+    parsed: null,
+    serialized: String(rawPayload),
+    parseError: 'payload must be an object or JSON string',
+  };
+}
+
+function validateIncomeRankPayload(parsedPayload) {
+  if (!parsedPayload || typeof parsedPayload !== 'object' || Array.isArray(parsedPayload)) {
+    return { valid: false, error: 'income-rank payload must be an object' };
+  }
+
+  const payload = parsedPayload;
+  const basis = payload.basis;
+  if (basis !== 'PPP' && basis !== 'MER') {
+    return { valid: false, error: 'income-rank payload missing valid "basis"' };
+  }
+
+  const incomeAnnualUsd = payload.incomeAnnualUsd;
+  if (typeof incomeAnnualUsd !== 'number' || !Number.isFinite(incomeAnnualUsd) || incomeAnnualUsd <= 0) {
+    return { valid: false, error: 'income-rank payload missing valid "incomeAnnualUsd"' };
+  }
+
+  const topPercent = payload.topPercent;
+  if (typeof topPercent !== 'number' || !Number.isFinite(topPercent) || topPercent < 0 || topPercent > 100) {
+    return { valid: false, error: 'income-rank payload missing valid "topPercent"' };
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(payload, 'countryCode')) {
+    return { valid: false, error: 'income-rank payload must include "countryCode" (nullable)' };
+  }
+
+  const countryCode = payload.countryCode;
+  if (countryCode !== null && typeof countryCode !== 'string') {
+    return { valid: false, error: 'income-rank payload "countryCode" must be string or null' };
+  }
+
+  return { valid: true, error: null };
+}
+
 // API: Submit quiz response
 app.post('/api/submit', async (req, res) => {
   try {
     const clientIP = getClientIP(req);
     const geo = await getGeoFromIP(clientIP);
     const body = req.body;
-    const appPayload = body.payload === undefined
-      ? null
-      : (typeof body.payload === 'string' ? body.payload : JSON.stringify(body.payload));
+    const payloadState = normalizePayload(body.payload);
+    const appPayload = payloadState.serialized;
+
+    let appPayloadValid = null;
+    let appPayloadError = payloadState.parseError;
+
+    if (body.payload !== undefined) {
+      appPayloadValid = payloadState.parseError ? 0 : 1;
+    }
+
+    if (body.appId === 'income-rank') {
+      const incomePayloadValidation = validateIncomeRankPayload(payloadState.parsed);
+      appPayloadValid = incomePayloadValidation.valid ? 1 : 0;
+      appPayloadError = incomePayloadValidation.valid
+        ? null
+        : incomePayloadValidation.error;
+    }
 
     await db.execute({
       sql: `
@@ -648,7 +735,7 @@ app.post('/api/submit', async (req, res) => {
           screen_width, screen_height, viewport_width, viewport_height,
           pixel_ratio, platform, connection_type,
           user_agent, referer,
-          app_payload
+          app_payload, app_payload_valid, app_payload_error
         ) VALUES (
           ?, ?, ?, ?, ?,
           ?, ?, ?, ?,
@@ -663,7 +750,7 @@ app.post('/api/submit', async (req, res) => {
           ?, ?, ?, ?,
           ?, ?, ?,
           ?, ?,
-          ?
+          ?, ?, ?
         )
       `,
       args: [
@@ -715,7 +802,9 @@ app.post('/api/submit', async (req, res) => {
         body.connectionType || null,
         req.headers['user-agent'] || 'Unknown',
         req.headers['referer'] || 'Direct',
-        appPayload
+        appPayload,
+        appPayloadValid,
+        appPayloadError
       ]
     });
 
@@ -795,6 +884,150 @@ app.get('/api/stats/summary', async (req, res) => {
   } catch (error) {
     console.error('Error reading summary:', error);
     res.status(500).json({ error: 'Failed to read summary' });
+  }
+});
+
+function quantile(values, q) {
+  if (!Array.isArray(values) || values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const idx = (sorted.length - 1) * q;
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return sorted[lo];
+  const frac = idx - lo;
+  return sorted[lo] * (1 - frac) + sorted[hi] * frac;
+}
+
+function getTopPercentBand(topPercent) {
+  if (!Number.isFinite(topPercent) || topPercent < 0) return null;
+  if (topPercent > 50) return '>50';
+  if (topPercent > 20) return '50-20';
+  if (topPercent > 10) return '20-10';
+  if (topPercent > 1) return '10-1';
+  if (topPercent > 0.1) return '1-0.1';
+  return '<0.1';
+}
+
+// API: Income-rank aggregated stats
+app.get('/api/stats/income-summary', async (req, res) => {
+  try {
+    const result = await db.execute(`
+      SELECT id, timestamp, country_code, app_payload, app_payload_valid, app_payload_error
+      FROM responses
+      WHERE app_id = 'income-rank'
+      ORDER BY id DESC
+    `);
+
+    const rows = result.rows || [];
+    const byBasisMap = { PPP: 0, MER: 0 };
+    const topPercentBandMap = {
+      '>50': 0,
+      '50-20': 0,
+      '20-10': 0,
+      '10-1': 0,
+      '1-0.1': 0,
+      '<0.1': 0,
+    };
+    const countryMap = new Map();
+    const incomeValues = [];
+    let validResponses = 0;
+
+    const recentResponses = [];
+
+    for (const row of rows) {
+      const payloadState = normalizePayload(row.app_payload);
+      const incomeValidation = validateIncomeRankPayload(payloadState.parsed);
+      const payloadValidBySchema = incomeValidation.valid;
+      const payloadValidColumn = row.app_payload_valid === null || row.app_payload_valid === undefined
+        ? payloadValidBySchema
+        : Number(row.app_payload_valid) === 1;
+      const payloadValid = payloadValidBySchema && payloadValidColumn;
+      const payloadError = row.app_payload_error || payloadState.parseError || incomeValidation.error;
+
+      const payload = payloadState.parsed && typeof payloadState.parsed === 'object'
+        ? payloadState.parsed
+        : null;
+      const basis = payload && (payload.basis === 'PPP' || payload.basis === 'MER') ? payload.basis : null;
+      const incomeAnnualUsd = payload ? Number(payload.incomeAnnualUsd) : null;
+      const topPercent = payload ? Number(payload.topPercent) : null;
+      const countryCode = payload && Object.prototype.hasOwnProperty.call(payload, 'countryCode')
+        ? payload.countryCode
+        : null;
+
+      if (payloadValid && basis) {
+        validResponses += 1;
+        byBasisMap[basis] += 1;
+
+        if (Number.isFinite(incomeAnnualUsd) && incomeAnnualUsd > 0) {
+          incomeValues.push(incomeAnnualUsd);
+        }
+
+        if (Number.isFinite(topPercent) && topPercent >= 0 && topPercent <= 100) {
+          const band = getTopPercentBand(topPercent);
+          if (band) topPercentBandMap[band] += 1;
+        }
+
+        const country = typeof countryCode === 'string' && countryCode
+          ? countryCode
+          : (typeof row.country_code === 'string' && row.country_code ? row.country_code : null);
+        if (country) {
+          countryMap.set(country, (countryMap.get(country) || 0) + 1);
+        }
+      }
+
+      if (recentResponses.length < 50) {
+        recentResponses.push({
+          id: row.id,
+          timestamp: row.timestamp,
+          countryCode: typeof countryCode === 'string' && countryCode
+            ? countryCode
+            : (typeof row.country_code === 'string' ? row.country_code : null),
+          basis,
+          incomeAnnualUsd: Number.isFinite(incomeAnnualUsd) ? incomeAnnualUsd : null,
+          topPercent: Number.isFinite(topPercent) ? topPercent : null,
+          conversionSource: payload && typeof payload.conversionSource === 'string' ? payload.conversionSource : null,
+          conversionDate: payload && typeof payload.conversionDate === 'string' ? payload.conversionDate : null,
+          effectiveIncomeYear: payload && Number.isFinite(Number(payload.effectiveIncomeYear))
+            ? Number(payload.effectiveIncomeYear)
+            : null,
+          payloadValid,
+          payloadError,
+        });
+      }
+    }
+
+    const topCountries = [...countryMap.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([countryCode, count]) => ({ countryCode, count }));
+
+    res.json({
+      totalResponses: rows.length,
+      validResponses,
+      byBasis: [
+        { basis: 'PPP', count: byBasisMap.PPP },
+        { basis: 'MER', count: byBasisMap.MER },
+      ],
+      incomeUsdPercentiles: {
+        p50: quantile(incomeValues, 0.5),
+        p75: quantile(incomeValues, 0.75),
+        p90: quantile(incomeValues, 0.9),
+        p99: quantile(incomeValues, 0.99),
+      },
+      topPercentBands: [
+        { band: '>50', count: topPercentBandMap['>50'] },
+        { band: '50-20', count: topPercentBandMap['50-20'] },
+        { band: '20-10', count: topPercentBandMap['20-10'] },
+        { band: '10-1', count: topPercentBandMap['10-1'] },
+        { band: '1-0.1', count: topPercentBandMap['1-0.1'] },
+        { band: '<0.1', count: topPercentBandMap['<0.1'] },
+      ],
+      topCountries,
+      recentResponses,
+    });
+  } catch (error) {
+    console.error('Error reading income summary:', error);
+    res.status(500).json({ error: 'Failed to read income summary' });
   }
 });
 

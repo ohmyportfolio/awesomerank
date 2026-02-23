@@ -13,9 +13,9 @@ export const Landing = ({ onStart }: LandingProps) => {
         <>
             <Helmet>
                 <title>{t('World Rank - Where Do You Stand?')} | Awesome Rank</title>
-                <meta name="description" content={t('Take the quiz to discover your global ranking among 8 billion people. Find out where you stand in the world.')} />
+                <meta name="description" content={t('Take the quiz for a modeled estimate of your global ranking among 8 billion people.')} />
                 <meta property="og:title" content={`${t('World Rank')} | Awesome Rank`} />
-                <meta property="og:description" content={t('Where do you stand among 8 billion people?')} />
+                <meta property="og:description" content={t('A modeled estimate of where you stand among 8 billion people.')} />
             </Helmet>
             <motion.div
             className="landing-container"
