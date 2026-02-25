@@ -3,8 +3,9 @@ module.exports = {
     name: 'worldrank',
     cwd: '/projects/worldrank/server',
     script: 'server.js',
-    instances: 'max',  // CPU 코어 수만큼 인스턴스 생성 (Turso는 동시 접속 지원)
-    exec_mode: 'cluster',
+    env_file: '/projects/worldrank/server/.env',
+    instances: 1,
+    exec_mode: 'fork',
     env: {
       NODE_ENV: 'production',
       PORT: 3000

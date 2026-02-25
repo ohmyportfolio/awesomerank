@@ -23,9 +23,9 @@ world-rank/
 │   │   ├── locales/   # Translation files (see i18n.ts for supported languages)
 │   │   └── i18n.ts
 │   └── package.json
-├── server/            # Express + SQLite backend
+├── server/            # Express + PostgreSQL backend
 │   ├── server.js
-│   └── data/          # SQLite database
+│   └── db/            # SQL migrations
 └── package.json       # Root scripts
 ```
 
@@ -127,4 +127,4 @@ The app collects:
 - Geo data (country, city from IP) - auto collected
 - Quiz responses and timing
 
-Data is stored in SQLite at `server/data/responses.db`
+Data is stored in PostgreSQL (`responses` table)

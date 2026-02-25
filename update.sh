@@ -20,7 +20,12 @@ npm run build
 
 echo ""
 echo "[4/4] PM2 서버 재시작..."
-pm2 reload worldrank
+if pm2 describe worldrank >/dev/null 2>&1; then
+  pm2 reload ecosystem.config.cjs --only worldrank --update-env
+else
+  pm2 start ecosystem.config.cjs --only worldrank --update-env
+fi
+pm2 save
 
 echo ""
 echo "=== 업데이트 완료 ==="

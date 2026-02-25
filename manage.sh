@@ -32,6 +32,47 @@ print_warning() {
     echo -e "${YELLOW}[WARN]${NC} $1"
 }
 
+load_db_env() {
+    if [ -f "$SERVER_DIR/.env" ]; then
+        set -a
+        # shellcheck disable=SC1090
+        source "$SERVER_DIR/.env"
+        set +a
+    fi
+
+    DB_HOST="${POSTGRES_HOST:-127.0.0.1}"
+    DB_PORT="${POSTGRES_PORT:-5432}"
+    DB_NAME="${POSTGRES_DB:-worldrank_prod}"
+    DB_USER="${POSTGRES_USER:-worldrank_app}"
+    DB_PASSWORD="${POSTGRES_PASSWORD:-}"
+}
+
+run_psql_scalar() {
+    local sql="$1"
+    load_db_env
+    PGPASSWORD="$DB_PASSWORD" psql \
+        -X -q \
+        -h "$DB_HOST" \
+        -p "$DB_PORT" \
+        -U "$DB_USER" \
+        -d "$DB_NAME" \
+        -t -A \
+        -c "$sql" 2>/dev/null | tr -d '[:space:]'
+}
+
+run_psql_table() {
+    local sql="$1"
+    load_db_env
+    PGPASSWORD="$DB_PASSWORD" psql \
+        -X -q \
+        -h "$DB_HOST" \
+        -p "$DB_PORT" \
+        -U "$DB_USER" \
+        -d "$DB_NAME" \
+        -P pager=off \
+        -c "$sql"
+}
+
 # 서버 PID 가져오기
 get_pid() {
     if [ -f "$PID_FILE" ]; then
@@ -169,9 +210,14 @@ cmd_status() {
     fi
 
     # DB 통계
-    if [ -f "$SERVER_DIR/data/responses.db" ]; then
-        local count=$(sqlite3 "$SERVER_DIR/data/responses.db" "SELECT COUNT(*) FROM responses;" 2>/dev/null || echo "0")
-        echo "응답 수: $count 건"
+    if command -v psql &> /dev/null; then
+        local count
+        count=$(run_psql_scalar "SELECT COUNT(*) FROM responses;" || true)
+        if [ -n "$count" ]; then
+            echo "응답 수: $count 건"
+        else
+            print_warning "PostgreSQL 연결 실패 (server/.env 설정 확인)"
+        fi
     fi
 
     echo "========================================"
@@ -180,10 +226,15 @@ cmd_status() {
 
 # DB 통계
 cmd_stats() {
-    local db="$SERVER_DIR/data/responses.db"
+    if ! command -v psql &> /dev/null; then
+        print_error "psql 명령을 찾을 수 없습니다"
+        return 1
+    fi
 
-    if [ ! -f "$db" ]; then
-        print_error "데이터베이스 파일이 없습니다"
+    local total
+    total=$(run_psql_scalar "SELECT COUNT(*) FROM responses;" || true)
+    if [ -z "$total" ]; then
+        print_error "PostgreSQL 연결 실패 (server/.env 설정 확인)"
         return 1
     fi
 
@@ -191,13 +242,11 @@ cmd_stats() {
     echo "========================================"
     echo "         응답 통계"
     echo "========================================"
-
-    local total=$(sqlite3 "$db" "SELECT COUNT(*) FROM responses;")
     echo "총 응답 수: $total"
     echo ""
 
     echo "[ 국가별 ]"
-    sqlite3 -column -header "$db" "
+    run_psql_table "
         SELECT country, COUNT(*) as count
         FROM responses
         GROUP BY country
@@ -207,7 +256,7 @@ cmd_stats() {
     echo ""
 
     echo "[ 연령대별 ]"
-    sqlite3 -column -header "$db" "
+    run_psql_table "
         SELECT age_group, COUNT(*) as count
         FROM responses
         WHERE age_group IS NOT NULL
@@ -217,7 +266,7 @@ cmd_stats() {
     echo ""
 
     echo "[ 언어별 ]"
-    sqlite3 -column -header "$db" "
+    run_psql_table "
         SELECT selected_language as lang, COUNT(*) as count
         FROM responses
         WHERE selected_language IS NOT NULL
@@ -228,7 +277,7 @@ cmd_stats() {
     echo ""
 
     echo "[ 기기별 ]"
-    sqlite3 -column -header "$db" "
+    run_psql_table "
         SELECT device_type, COUNT(*) as count
         FROM responses
         GROUP BY device_type;

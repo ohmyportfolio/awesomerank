@@ -24,6 +24,9 @@ dist-ssr
 *.sw?
 *.pid
 
-# Database
-server/data/*.db
-server/data/*.db-*
+# Server secrets
+server/.env
+
+# Local screenshots / captures
+awesomerank-*.png
+truesize-*.png

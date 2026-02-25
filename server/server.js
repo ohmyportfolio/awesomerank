@@ -1,11 +1,15 @@
 import express from 'express';
 import cors from 'cors';
-import { createClient } from '@libsql/client';
+import pg from 'pg';
+import { config as loadEnv } from 'dotenv';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { existsSync, mkdirSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, readdirSync } from 'fs';
+
+const { Pool } = pg;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+loadEnv({ path: join(__dirname, '.env') });
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -15,6 +19,7 @@ app.use(express.json());
 
 // Serve static files (frontend build)
 const FRONTEND_DIST = join(__dirname, '..', 'frontend', 'dist');
+const MIGRATIONS_DIR = join(__dirname, 'db', 'migrations');
 
 // Redirect legacy query-based URLs to path-based routes
 app.get('*', (req, res, next) => {
@@ -438,158 +443,84 @@ function renderSeoHtml(req) {
   return html;
 }
 
-// Ensure data directory exists for local SQLite database
-const dataDir = join(__dirname, 'data');
-if (!existsSync(dataDir)) {
-  mkdirSync(dataDir, { recursive: true });
-  console.log('Created data directory:', dataDir);
+const postgresPool = new Pool({
+  host: process.env.POSTGRES_HOST || '127.0.0.1',
+  port: Number.parseInt(process.env.POSTGRES_PORT || '5432', 10),
+  database: process.env.POSTGRES_DB || 'worldrank_prod',
+  user: process.env.POSTGRES_USER || 'worldrank_app',
+  password: process.env.POSTGRES_PASSWORD || '',
+  max: Number.parseInt(process.env.POSTGRES_POOL_MAX || '10', 10),
+  idleTimeoutMillis: Number.parseInt(process.env.POSTGRES_IDLE_TIMEOUT_MS || '30000', 10),
+  connectionTimeoutMillis: Number.parseInt(process.env.POSTGRES_CONNECT_TIMEOUT_MS || '10000', 10),
+});
+
+function convertSqlitePlaceholdersToPg(sql) {
+  let paramIndex = 0;
+  return sql.replace(/\?/g, () => `$${++paramIndex}`);
 }
 
-// Turso Database (libSQL) - supports both local file and remote Turso
-const db = createClient({
-  url: process.env.TURSO_DATABASE_URL || 'file:./data/responses.db',
-  authToken: process.env.TURSO_AUTH_TOKEN,
-});
+async function executeQuery(statement) {
+  if (typeof statement === 'string') {
+    return postgresPool.query(statement);
+  }
+
+  const sql = typeof statement?.sql === 'string' ? statement.sql : '';
+  const args = Array.isArray(statement?.args) ? statement.args : [];
+  const convertedSql = convertSqlitePlaceholdersToPg(sql);
+  return postgresPool.query(convertedSql, args);
+}
+
+const db = {
+  execute: executeQuery,
+};
 
 // Initialize database
 async function initDatabase() {
-  // Create table if not exists
   await db.execute(`
-    CREATE TABLE IF NOT EXISTS responses (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      timestamp TEXT NOT NULL,
-
-      -- Geo data (from IP)
-      country TEXT,
-      country_code TEXT,
-      city TEXT,
-      timezone_from_ip TEXT,
-
-      -- App / experiment metadata
-      app_id TEXT,
-      quiz_version TEXT,
-      question_set_id TEXT,
-      score_algo_version TEXT,
-
-      -- Demographics
-      age_group TEXT,
-      gender TEXT,
-
-      -- Quiz results
-      question_ids TEXT,
-      answers TEXT,
-      question_times TEXT,
-      answers_by_question_id TEXT,
-      times_by_question_id TEXT,
-      total_quiz_time INTEGER,
-
-      -- Score results
-      score REAL,
-      tier TEXT,
-      yes_count INTEGER,
-
-      -- Session info
-      session_duration INTEGER,
-      selected_language TEXT,
-      client_id TEXT,
-      session_id TEXT,
-      session_started_at TEXT,
-      session_finished_at TEXT,
-      completed INTEGER,
-
-      -- Attribution
-      landing_url TEXT,
-      landing_path TEXT,
-      document_referrer TEXT,
-      utm_source TEXT,
-      utm_medium TEXT,
-      utm_campaign TEXT,
-      utm_content TEXT,
-      utm_term TEXT,
-
-      -- Client data
-      browser_language TEXT,
-      languages TEXT,
-      timezone TEXT,
-      device_type TEXT,
-      screen_width INTEGER,
-      screen_height INTEGER,
-      viewport_width INTEGER,
-      viewport_height INTEGER,
-      pixel_ratio REAL,
-      platform TEXT,
-      connection_type TEXT,
-
-      -- Request metadata
-      user_agent TEXT,
-      referer TEXT,
-
-      -- App-specific blob for non-quiz tools (JSON string)
-      app_payload TEXT,
-      app_payload_valid INTEGER,
-      app_payload_error TEXT
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      version TEXT PRIMARY KEY,
+      applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
 
-  // Lightweight, additive migrations for existing DBs
-  const columnsToAdd = {
-    country_code: 'TEXT',
-    app_id: 'TEXT',
-    app_payload: 'TEXT',
-    app_payload_valid: 'INTEGER',
-    app_payload_error: 'TEXT',
-    quiz_version: 'TEXT',
-    question_set_id: 'TEXT',
-    score_algo_version: 'TEXT',
-    question_ids: 'TEXT',
-    answers_by_question_id: 'TEXT',
-    times_by_question_id: 'TEXT',
-    client_id: 'TEXT',
-    session_id: 'TEXT',
-    session_started_at: 'TEXT',
-    session_finished_at: 'TEXT',
-    completed: 'INTEGER',
-    landing_url: 'TEXT',
-    landing_path: 'TEXT',
-    document_referrer: 'TEXT',
-    utm_source: 'TEXT',
-    utm_medium: 'TEXT',
-    utm_campaign: 'TEXT',
-    utm_content: 'TEXT',
-    utm_term: 'TEXT'
-  };
+  if (!existsSync(MIGRATIONS_DIR)) {
+    throw new Error(`Migrations directory not found: ${MIGRATIONS_DIR}`);
+  }
 
-  const tableInfo = await db.execute('PRAGMA table_info(responses)');
-  const existingColumns = new Set(tableInfo.rows.map(row => row.name));
+  const migrationFiles = readdirSync(MIGRATIONS_DIR)
+    .filter((fileName) => fileName.endsWith('.sql'))
+    .sort((a, b) => a.localeCompare(b));
 
-  for (const [name, type] of Object.entries(columnsToAdd)) {
-    if (!existingColumns.has(name)) {
-      try {
-        await db.execute(`ALTER TABLE responses ADD COLUMN ${name} ${type}`);
-      } catch {
-        // Column might already exist
+  for (const fileName of migrationFiles) {
+    const alreadyApplied = await db.execute({
+      sql: 'SELECT 1 FROM schema_migrations WHERE version = ? LIMIT 1',
+      args: [fileName],
+    });
+
+    if (alreadyApplied.rows.length > 0) continue;
+
+    const sql = readFileSync(join(MIGRATIONS_DIR, fileName), 'utf8').trim();
+    const client = await postgresPool.connect();
+    try {
+      await client.query('BEGIN');
+      if (sql.length > 0) {
+        await client.query(sql);
       }
+      await client.query(
+        'INSERT INTO schema_migrations (version) VALUES ($1)',
+        [fileName],
+      );
+      await client.query('COMMIT');
+      console.log(`Applied migration: ${fileName}`);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw new Error(`Failed migration ${fileName}: ${error.message}`);
+    } finally {
+      client.release();
     }
   }
 
-  // Create indexes for common queries
-  const indexes = [
-    'CREATE INDEX IF NOT EXISTS idx_timestamp ON responses(timestamp)',
-    'CREATE INDEX IF NOT EXISTS idx_country ON responses(country)',
-    'CREATE INDEX IF NOT EXISTS idx_country_code ON responses(country_code)',
-    'CREATE INDEX IF NOT EXISTS idx_age_group ON responses(age_group)',
-    'CREATE INDEX IF NOT EXISTS idx_gender ON responses(gender)',
-    'CREATE INDEX IF NOT EXISTS idx_app_id ON responses(app_id)',
-    'CREATE INDEX IF NOT EXISTS idx_question_set_id ON responses(question_set_id)',
-    'CREATE INDEX IF NOT EXISTS idx_client_id ON responses(client_id)',
-    'CREATE INDEX IF NOT EXISTS idx_session_id ON responses(session_id)',
-  ];
-
-  for (const sql of indexes) {
-    await db.execute(sql);
-  }
-
-  console.log('Database initialized');
+  console.log('Database migrations completed');
 }
 
 // Helper: Get country from IP using free API
@@ -1043,7 +974,37 @@ app.get('*', (req, res) => {
 });
 
 // Start server after database initialization
-initDatabase()
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function isRetryableDbInitError(error) {
+  if (!error) return false;
+  if (error.code === '57P03') return true; // PostgreSQL: cannot_connect_now
+  if (error.code === 'ECONNREFUSED') return true;
+  if (error.code === 'ETIMEDOUT') return true;
+  return typeof error.message === 'string'
+    && (error.message.includes('Connection terminated unexpectedly')
+      || error.message.includes('the database system is starting up'));
+}
+
+async function initDatabaseWithRetry(maxRetries = 8, retryDelayMs = 250) {
+  for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+    try {
+      await initDatabase();
+      return;
+    } catch (error) {
+      const isLastAttempt = attempt === maxRetries;
+      if (!isRetryableDbInitError(error) || isLastAttempt) {
+        throw error;
+      }
+      console.warn(
+        `Database is not ready during initialization (attempt ${attempt}/${maxRetries}). Retrying in ${retryDelayMs}ms...`,
+      );
+      await sleep(retryDelayMs);
+    }
+  }
+}
+
+initDatabaseWithRetry()
   .then(() => {
     app.listen(PORT, () => {
       console.log(`Server running on http://localhost:${PORT}`);
